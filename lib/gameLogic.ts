@@ -20,6 +20,8 @@ export interface GameState {
   selectedChips: { [amount: number]: number } // Track individual chip selections
   canDoubleDown: boolean
   isDoubleDown: boolean
+  // Add this for debugging card counts
+  cardCounts?: { [key: string]: number }
 }
 
 export type GameAction = 
@@ -450,4 +452,9 @@ export function isBlackjack(hand: Card[]): boolean {
 
 export function isBust(hand: Card[]): boolean {
   return calculateHandValue(hand) > 21
+} 
+
+// Add this helper function after the existing functions
+function countCardInDeck(deck: Card[], suit: string, value: string): number {
+  return deck.filter(card => card.suit === suit && card.value === value).length
 } 
