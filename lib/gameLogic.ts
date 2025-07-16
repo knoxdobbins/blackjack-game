@@ -34,7 +34,7 @@ export type GameAction =
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'NEW_GAME':
-      return initializeGame()
+      return initializeGame(state.credits)
     case 'PLACE_BET':
       return handlePlaceBet(state, action.amount)
     case 'REMOVE_BET_CHIP':
@@ -52,7 +52,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   }
 }
 
-function initializeGame(): GameState {
+export function initializeGame(currentCredits: number = 1000): GameState {
   return {
     playerHand: [],
     dealerHand: [],
@@ -60,10 +60,10 @@ function initializeGame(): GameState {
     gameStatus: 'betting',
     playerScore: 0,
     dealerScore: 0,
-    message: 'Place your bet! You have $1000 credits.',
+    message: `Place your bet! You have $${currentCredits} credits.`,
     cardsRemaining: 0,
     deckShuffled: false,
-    credits: 1000,
+    credits: currentCredits,
     currentBet: 0,
     selectedChips: {},
     canDoubleDown: false,
@@ -122,8 +122,10 @@ function handleRemoveBetChip(state: GameState, amount: number): GameState {
 function startGame(state: GameState): GameState {
   if (state.gameStatus !== 'betting' || state.currentBet === 0) return state
   
-  const deck = createDeck()
-  const shuffledDeck = shuffleDeck(deck)
+  // Use existing deck if it has enough cards, otherwise create a new one
+  let deck = state.deck.length > 30 ? [...state.deck] : createDeck()
+  let shuffledDeck = state.deck.length > 30 ? deck : shuffleDeck(deck)
+  let deckShuffled = state.deck.length <= 30 // Only mark as shuffled if we created a new deck
   
   const playerHand = [shuffledDeck.pop()!, shuffledDeck.pop()!]
   const dealerHand = [shuffledDeck.pop()!, shuffledDeck.pop()!]
@@ -179,7 +181,7 @@ function startGame(state: GameState): GameState {
     dealerScore,
     message,
     cardsRemaining: shuffledDeck.length,
-    deckShuffled: true,
+    deckShuffled,
     canDoubleDown,
     credits: newCredits,
     currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
@@ -343,11 +345,11 @@ function handleStand(state: GameState): GameState {
   
   if (finalDealerScore > 21) {
     message = 'Dealer busts! You win!'
-    winnings = state.currentBet
+    winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
     newCredits += winnings
   } else if (finalPlayerScore > finalDealerScore) {
     message = 'You win!'
-    winnings = state.currentBet
+    winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
     newCredits += winnings
   } else if (finalDealerScore > finalPlayerScore) {
     message = 'Dealer wins!'

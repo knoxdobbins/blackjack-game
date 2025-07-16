@@ -2,27 +2,13 @@
 
 import { useReducer, useEffect } from 'react'
 import { GameBoard } from '@/components/GameBoard'
-import { GameState, gameReducer } from '@/lib/gameLogic'
+import { GameState, gameReducer, initializeGame } from '@/lib/gameLogic'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 
 export default function BlackjackGame() {
-  const [gameState, dispatch] = useReducer(gameReducer, {
-    playerHand: [],
-    dealerHand: [],
-    deck: [],
-    gameStatus: 'betting',
-    playerScore: 0,
-    dealerScore: 0,
-    message: 'Place your bet! You have $1000 credits.',
-    cardsRemaining: 0,
-    deckShuffled: false,
-    credits: 1000,
-    currentBet: 0,
-    selectedChips: {},
-    canDoubleDown: false,
-    isDoubleDown: false
-  })
+  const [gameState, dispatch] = useReducer(gameReducer, initializeGame())
 
   const handleHit = () => dispatch({ type: 'HIT' })
   const handleStand = () => dispatch({ type: 'STAND' })
@@ -33,11 +19,15 @@ export default function BlackjackGame() {
   const handleRemoveBetChip = (amount: number) => dispatch({ type: 'REMOVE_BET_CHIP', amount })
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-800 to-green-900 p-4">
+    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 p-4">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-4xl font-bold text-white text-center mb-8">
-          Blackjack
-        </h1>
+        <Card className="bg-transparent border-0 shadow-none">
+          <CardHeader className="text-center pb-2">
+            <CardTitle className="text-4xl font-bold text-white">
+              Blackjack
+            </CardTitle>
+          </CardHeader>
+        </Card>
         
         <GameBoard 
           gameState={gameState}

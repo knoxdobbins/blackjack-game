@@ -1,11 +1,12 @@
 'use client'
 
 import React from 'react'
-import { Card } from '@/lib/gameLogic'
+import { Card, CardContent } from '@/components/ui/card'
+import { Card as GameCard } from '@/lib/gameLogic'
 import { PlayingCard } from './PlayingCard'
 
 interface HandDisplayProps {
-  hand: Card[]
+  hand: GameCard[]
   score: number
   isDealer: boolean
 }
@@ -26,12 +27,16 @@ export function HandDisplay({ hand, score, isDealer }: HandDisplayProps) {
       
       {/* Score */}
       <div className="text-center">
-        <p className="text-lg text-white">
-          {isDealer && hand.some(card => card.isHidden) 
-            ? `Score: ${score} (showing first card)`
-            : `Score: ${score}`
-          }
-        </p>
+        <Card className="bg-slate-700/50 border-slate-500 inline-block">
+          <CardContent className="p-2">
+            <span className="text-white text-lg">
+              {isDealer && hand.some(card => card.isHidden) 
+                ? `Score: ${score} (showing first card)`
+                : `Score: ${score}`
+              }
+            </span>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
