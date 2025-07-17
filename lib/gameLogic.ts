@@ -20,6 +20,8 @@ export interface GameState {
   selectedChips: { [amount: number]: number } // Track individual chip selections
   canDoubleDown: boolean
   isDoubleDown: boolean
+  gameResult?: 'win' | 'lose' | 'tie' | null // Track the result of the last round
+  winnings?: number // Track winnings from the last round
   // Add this for debugging card counts
   cardCounts?: { [key: string]: number }
 }
@@ -75,7 +77,9 @@ export function initializeGame(currentCredits: number = 1000): GameState {
     currentBet: 0,
     selectedChips: {},
     canDoubleDown: false,
-    isDoubleDown: false
+    isDoubleDown: false,
+    gameResult: null,
+    winnings: 0
   }
 }
 
@@ -177,6 +181,9 @@ function startGame(state: GameState): GameState {
   const playerBlackjack = isBlackjack(playerHand)
   const dealerBlackjack = isBlackjack([dealerHand[0], dealerHand[1]])
   
+  // Check if player can double down (only on first two cards, total 9-11)
+  const canDoubleDown = playerHand.length === 2 && playerScore >= 9 && playerScore <= 11
+  
   let gameStatus: GameState['gameStatus'] = 'playing'
   let message = 'Your turn! Hit, Stand, or Double Down?'
   let newCredits = state.credits
@@ -189,24 +196,75 @@ function startGame(state: GameState): GameState {
     message = canContinuePlaying 
       ? 'Push! Both have blackjack. Place your next bet!'
       : 'Push! Both have blackjack. Game Over - No credits left!'
+    return {
+      ...state,
+      playerHand,
+      dealerHand,
+      deck: shuffledDeck,
+      gameStatus,
+      playerScore,
+      dealerScore,
+      message,
+      cardsRemaining: shuffledDeck.length,
+      deckShuffled,
+      canDoubleDown,
+      credits: newCredits,
+      currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
+      selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
+      gameResult: 'tie',
+      winnings: 0
+    }
   } else if (playerBlackjack) {
-    const winnings = Math.floor(state.currentBet * 1.5)
+    const winnings = state.currentBet + Math.floor(state.currentBet * 1.5) // Return bet + 1.5x bonus
     newCredits += winnings
     const canContinuePlaying = newCredits > 0
     gameStatus = canContinuePlaying ? 'betting' : 'finished'
     message = canContinuePlaying 
       ? `Blackjack! You win $${winnings}! (1.5x your bet) Place your next bet!`
       : `Blackjack! You win $${winnings}! (1.5x your bet) Game Over - No credits left!`
+    return {
+      ...state,
+      playerHand,
+      dealerHand,
+      deck: shuffledDeck,
+      gameStatus,
+      playerScore,
+      dealerScore,
+      message,
+      cardsRemaining: shuffledDeck.length,
+      deckShuffled,
+      canDoubleDown,
+      credits: newCredits,
+      currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
+      selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
+      gameResult: 'win',
+      winnings
+    }
   } else if (dealerBlackjack) {
     const canContinuePlaying = newCredits > 0
     gameStatus = canContinuePlaying ? 'betting' : 'finished'
     message = canContinuePlaying 
       ? 'Dealer has blackjack! You lose. Place your next bet!'
       : 'Dealer has blackjack! You lose. Game Over - No credits left!'
+    return {
+      ...state,
+      playerHand,
+      dealerHand,
+      deck: shuffledDeck,
+      gameStatus,
+      playerScore,
+      dealerScore,
+      message,
+      cardsRemaining: shuffledDeck.length,
+      deckShuffled,
+      canDoubleDown,
+      credits: newCredits,
+      currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
+      selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
+      gameResult: 'lose',
+      winnings: -state.currentBet // Show the amount lost (negative)
+    }
   }
-  
-  // Check if player can double down (only on first two cards, total 9-11)
-  const canDoubleDown = playerHand.length === 2 && playerScore >= 9 && playerScore <= 11
   
   return {
     ...state,
@@ -221,8 +279,10 @@ function startGame(state: GameState): GameState {
     deckShuffled,
     canDoubleDown,
     credits: newCredits,
-    currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
-    selectedChips: gameStatus === 'betting' ? {} : state.selectedChips
+    currentBet: gameStatus !== 'playing' ? 0 : state.currentBet,
+    selectedChips: gameStatus !== 'playing' ? {} : state.selectedChips,
+    gameResult: null,
+    winnings: 0
   }
 }
 
@@ -265,6 +325,24 @@ function handleDoubleDown(state: GameState): GameState {
     finalMessage = canContinuePlaying 
       ? 'Double Down Bust! You lose. Place your next bet!'
       : 'Double Down Bust! You lose. Game Over - No credits left!'
+    
+    return {
+      ...state,
+      playerHand: newPlayerHand,
+      deck: newDeck,
+      gameStatus: newGameStatus,
+      playerScore: newPlayerScore,
+      message: finalMessage,
+      cardsRemaining: newDeck.length,
+      deckShuffled,
+      credits: newCredits,
+      currentBet: newGameStatus === 'betting' ? 0 : newBet,
+      canDoubleDown: false,
+      isDoubleDown: true,
+      gameResult: 'lose',
+      winnings: -newBet, // Show the amount lost (negative) - double the bet
+      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips
+    }
   } else {
     finalMessage = 'Double Down! Dealer\'s turn.'
     // Automatically trigger dealer's turn when double down doesn't bust
@@ -324,6 +402,22 @@ function handleHit(state: GameState): GameState {
     newMessage = canContinuePlaying 
       ? 'Bust! You lose! Place your next bet!'
       : 'Bust! You lose! Game Over - No credits left!'
+    
+    return {
+      ...state,
+      playerHand: newPlayerHand,
+      deck: newDeck,
+      gameStatus: newGameStatus,
+      playerScore: newPlayerScore,
+      message: newMessage,
+      cardsRemaining: newDeck.length,
+      deckShuffled,
+      canDoubleDown: false,
+      gameResult: 'lose',
+      winnings: -state.currentBet, // Show the amount lost (negative)
+      currentBet: newGameStatus === 'betting' ? 0 : state.currentBet,
+      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips
+    }
   } else if (newPlayerScore === 21) {
     // Automatically trigger dealer's turn when player gets 21
     return handleStand({
@@ -379,22 +473,28 @@ function handleStand(state: GameState): GameState {
   let message = ''
   let newCredits = state.credits
   let winnings = 0
+  let gameResult: 'win' | 'lose' | 'tie' = 'lose'
   
   if (finalDealerScore > 21) {
     message = 'Dealer busts! You win!'
     winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
     newCredits += winnings
+    gameResult = 'win'
   } else if (finalPlayerScore > finalDealerScore) {
     message = 'You win!'
     winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
     newCredits += winnings
+    gameResult = 'win'
   } else if (finalDealerScore > finalPlayerScore) {
     message = 'Dealer wins!'
     // Player loses their bet (already deducted)
+    gameResult = 'lose'
+    winnings = -state.currentBet // Show the amount lost (negative)
   } else {
     message = 'Push! It\'s a tie!'
     // Return the bet
     newCredits += state.currentBet
+    gameResult = 'tie'
   }
   
   // Check if player has enough credits to continue playing
@@ -415,7 +515,9 @@ function handleStand(state: GameState): GameState {
     currentBet: 0,
     selectedChips: {},
     canDoubleDown: false,
-    isDoubleDown: false
+    isDoubleDown: false,
+    gameResult,
+    winnings
   }
 }
 
@@ -477,6 +579,8 @@ function calculateHandValue(hand: Card[]): number {
     total -= 10
     aces--
   }
+  
+
   
   return total
 }

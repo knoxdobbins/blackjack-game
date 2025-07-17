@@ -7,6 +7,8 @@ import { PlayingCard } from './PlayingCard'
 import { HandDisplay } from './HandDisplay'
 import { Chip } from './Chip'
 import { StackedChips } from './StackedChips'
+import { GameResult } from './GameResult'
+import { useEffect, useState } from 'react'
 
 interface GameBoardProps {
   gameState: GameState
@@ -22,7 +24,22 @@ interface GameBoardProps {
 }
 
 export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip, onUndoLastBet, onClearBet }: GameBoardProps) {
-  const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown } = gameState
+  const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown, gameResult, winnings } = gameState
+  
+  const [showResult, setShowResult] = useState(false)
+  
+  // Show result when game finishes and hide after 3 seconds
+  useEffect(() => {
+    if (gameResult && gameStatus === 'betting') {
+      setShowResult(true)
+      const timer = setTimeout(() => {
+        setShowResult(false)
+      }, 3000)
+      return () => clearTimeout(timer)
+    } else {
+      setShowResult(false)
+    }
+  }, [gameResult, gameStatus])
 
   const isGameActive = gameStatus === 'playing'
   const isGameFinished = gameStatus === 'finished'
@@ -31,15 +48,32 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
 
   return (
     <div className="relative">
+      {/* Game Result Overlay */}
+      <GameResult 
+        result={gameResult || null} 
+        winnings={winnings} 
+        isVisible={showResult} 
+      />
+      
       {/* Green Felt Table with Golden Border */}
       <div className="relative bg-green-700 rounded-3xl border-8 border-yellow-400 shadow-2xl overflow-hidden">
         <div className="p-8 min-h-[600px] flex flex-col">
           
           {/* Dealer Section - Top */}
           <div className="flex-1 flex flex-col items-center justify-start space-y-4">
-            {/* Dealer Label */}
-            <div className="bg-gray-800 rounded-lg px-4 py-2">
-              <span className="text-white font-semibold text-lg">Dealer</span>
+            {/* Dealer Label and Score */}
+            <div className="flex items-center space-x-4">
+              <div className="bg-gray-800 rounded-lg px-4 py-2">
+                <span className="text-white font-semibold text-lg">Dealer</span>
+              </div>
+              {/* Dealer Score */}
+              {dealerHand.length > 0 && (
+                <div className="bg-blue-800 rounded-lg px-3 py-2">
+                  <span className="text-white font-bold text-lg">
+                    {showDealerScore ? dealerScore : dealerHand[0]?.numericValue || 0}
+                  </span>
+                </div>
+              )}
             </div>
             
             {/* Dealer Cards and Deck */}
@@ -95,9 +129,17 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
               ))}
             </div>
             
-            {/* Player Label */}
-            <div className="bg-gray-800 rounded-lg px-4 py-2">
-              <span className="text-white font-semibold text-lg">Player</span>
+            {/* Player Label and Score */}
+            <div className="flex items-center space-x-4">
+              <div className="bg-gray-800 rounded-lg px-4 py-2">
+                <span className="text-white font-semibold text-lg">Player</span>
+              </div>
+              {/* Player Score */}
+              {playerHand.length > 0 && (
+                <div className="bg-green-800 rounded-lg px-3 py-2">
+                  <span className="text-white font-bold text-lg">{playerScore}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
