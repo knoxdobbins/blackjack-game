@@ -12,11 +12,9 @@ interface PlayingCardProps {
 export function PlayingCard({ card, isHidden }: PlayingCardProps) {
   if (isHidden) {
     return (
-      <Card className="w-16 h-24 bg-slate-700 border-2 border-slate-500 rounded-lg">
-        <CardContent className="p-0 h-full flex items-center justify-center">
-          <div className="text-slate-300 text-xs font-bold">?</div>
-        </CardContent>
-      </Card>
+      <div className="w-20 h-28 bg-blue-800 border-2 border-blue-600 rounded-lg shadow-lg flex items-center justify-center">
+        <div className="text-blue-200 text-xs font-bold">?</div>
+      </div>
     )
   }
 
@@ -31,19 +29,39 @@ export function PlayingCard({ card, isHidden }: PlayingCardProps) {
   }
 
   const getSuitColor = (suit: string) => {
-    return suit === 'hearts' || suit === 'diamonds' ? 'text-red-600' : 'text-slate-800'
+    return suit === 'hearts' || suit === 'diamonds' ? 'text-red-600' : 'text-black'
   }
 
   return (
-    <Card className="w-16 h-24 bg-white border-2 border-slate-300 rounded-lg shadow-lg hover:shadow-xl transition-shadow">
-      <CardContent className="p-0 h-full flex flex-col items-center justify-center">
-        <div className={`text-xs font-bold ${getSuitColor(card.suit)}`}>
-          {card.value}
+    <div className="w-20 h-28 bg-white border-2 border-gray-300 rounded-lg shadow-lg hover:shadow-xl transition-shadow">
+      <div className="p-1 h-full flex flex-col">
+        {/* Top left corner */}
+        <div className="flex items-start justify-between">
+          <div className={`text-xs font-bold ${getSuitColor(card.suit)}`}>
+            {card.value}
+          </div>
+          <div className={`text-xs ${getSuitColor(card.suit)}`}>
+            {getSuitSymbol(card.suit)}
+          </div>
         </div>
-        <div className={`text-lg ${getSuitColor(card.suit)}`}>
-          {getSuitSymbol(card.suit)}
+        
+        {/* Center suit */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className={`text-2xl ${getSuitColor(card.suit)}`}>
+            {getSuitSymbol(card.suit)}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+        
+        {/* Bottom right corner (rotated) */}
+        <div className="flex items-end justify-between">
+          <div className={`text-xs ${getSuitColor(card.suit)}`}>
+            {getSuitSymbol(card.suit)}
+          </div>
+          <div className={`text-xs font-bold ${getSuitColor(card.suit)}`}>
+            {card.value}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 } 

@@ -28,6 +28,8 @@ export type GameAction =
   | { type: 'NEW_GAME' }
   | { type: 'PLACE_BET'; amount: number }
   | { type: 'REMOVE_BET_CHIP'; amount: number }
+  | { type: 'UNDO_LAST_BET' }
+  | { type: 'CLEAR_BET' }
   | { type: 'START_GAME' }
   | { type: 'HIT' }
   | { type: 'STAND' }
@@ -41,6 +43,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return handlePlaceBet(state, action.amount)
     case 'REMOVE_BET_CHIP':
       return handleRemoveBetChip(state, action.amount)
+    case 'UNDO_LAST_BET':
+      return handleUndoLastBet(state)
+    case 'CLEAR_BET':
+      return handleClearBet(state)
     case 'START_GAME':
       return startGame(state)
     case 'HIT':
@@ -118,6 +124,35 @@ function handleRemoveBetChip(state: GameState, amount: number): GameState {
     credits: newCredits,
     selectedChips: newSelectedChips,
     message: newBet > 0 ? `Bet placed: $${newBet}. Click "Deal" to start!` : 'Place your bet!'
+  }
+}
+
+function handleUndoLastBet(state: GameState): GameState {
+  if (state.gameStatus !== 'betting') return state
+  if (state.currentBet === 0) return state
+
+  // Find the last chip that was placed (highest amount with count > 0)
+  const chipAmounts = Object.keys(state.selectedChips)
+    .map(Number)
+    .filter(amount => state.selectedChips[amount] > 0)
+    .sort((a, b) => b - a) // Sort in descending order
+
+  if (chipAmounts.length === 0) return state
+
+  const lastChipAmount = chipAmounts[0]
+  return handleRemoveBetChip(state, lastChipAmount)
+}
+
+function handleClearBet(state: GameState): GameState {
+  if (state.gameStatus !== 'betting') return state
+  if (state.currentBet === 0) return state
+
+  return {
+    ...state,
+    currentBet: 0,
+    credits: state.credits + state.currentBet,
+    selectedChips: {},
+    message: 'Place your bet!'
   }
 }
 

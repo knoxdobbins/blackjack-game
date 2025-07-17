@@ -32,11 +32,11 @@ export function Chip({ amount, onClick, disabled = false, selected = false, size
   const getChipSize = () => {
     switch (size) {
       case 'small':
-        return { width: 40, height: 40, textSize: 'text-xs' }
+        return { width: 32, height: 32, textSize: 'text-xs' }
       case 'large':
-        return { width: 100, height: 100, textSize: 'text-base' }
+        return { width: 80, height: 80, textSize: 'text-base' }
       default:
-        return { width: 80, height: 80, textSize: 'text-sm' }
+        return { width: 48, height: 48, textSize: 'text-sm' }
     }
   }
 

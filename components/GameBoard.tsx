@@ -1,11 +1,7 @@
 'use client'
 
 import React from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
 import { GameState } from '@/lib/gameLogic'
 import { PlayingCard } from './PlayingCard'
 import { HandDisplay } from './HandDisplay'
@@ -21,9 +17,11 @@ interface GameBoardProps {
   onStartGame: () => void
   onDoubleDown: () => void
   onRemoveBetChip: (amount: number) => void
+  onUndoLastBet: () => void
+  onClearBet: () => void
 }
 
-export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip }: GameBoardProps) {
+export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip, onUndoLastBet, onClearBet }: GameBoardProps) {
   const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown } = gameState
 
   const isGameActive = gameStatus === 'playing'
@@ -32,182 +30,169 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
   const showDealerScore = isGameFinished || gameStatus === 'dealer-turn' || isBetting
 
   return (
-    <>
-      <div className="space-y-6 pb-48">
-        {/* Credits and Bet Display */}
-        <Card className="bg-slate-800/80 border-slate-600">
-          <CardContent className="p-4">
-            <div className="flex justify-between items-center">
-              <div className="text-white">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="bg-slate-600 hover:bg-slate-700 text-white">
-                    Credits: ${credits}
-                  </Badge>
-                </div>
-                {currentBet > 0 && (
-                  <div className="flex items-center justify-between mt-2 w-56">
-                    <span className="text-sm text-white/80">Current Bet:</span>
-                    <div className="flex-1 flex justify-end">
-                      <StackedChips
-                        selectedChips={gameState.selectedChips}
-                        size="small"
-                        onChipClick={gameStatus === 'betting' ? onRemoveBetChip : undefined}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* New Game Button - Always visible in top right */}
-              <Button
-                onClick={onNewGame}
-                variant="default"
-                className="bg-slate-600 hover:bg-slate-700 text-white"
-              >
-                New Game
-              </Button>
+    <div className="relative">
+      {/* Green Felt Table with Golden Border */}
+      <div className="relative bg-green-700 rounded-3xl border-8 border-yellow-400 shadow-2xl overflow-hidden">
+        <div className="p-8 min-h-[600px] flex flex-col">
+          
+          {/* Dealer Section - Top */}
+          <div className="flex-1 flex flex-col items-center justify-start space-y-4">
+            {/* Dealer Label */}
+            <div className="bg-gray-800 rounded-lg px-4 py-2">
+              <span className="text-white font-semibold text-lg">Dealer</span>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Dealer Section */}
-        <Card className="bg-slate-800/90 border-slate-600">
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold text-white">Dealer</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HandDisplay
-              hand={dealerHand}
-              score={showDealerScore ? dealerScore : dealerHand[0]?.numericValue || 0}
-              isDealer={true}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Game Status */}
-        <div className="text-center space-y-4">
-          <Card className="bg-slate-800/50 border-slate-600">
-            <CardContent className="p-4">
-              <p className="text-xl font-semibold text-white">{message}</p>
-            </CardContent>
-          </Card>
-
-          {/* Cards Remaining and Deck Status */}
-          <div className="flex justify-center items-center gap-4">
-            <Card className={`${cardsRemaining <= 30 ? 'bg-red-900/80 border-red-700' : 'bg-slate-800/80 border-slate-600'}`}>
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-white text-sm">
-                    Cards: {cardsRemaining}
-                  </span>
-                  {cardsRemaining <= 30 && (
-                    <span className="text-yellow-300 text-sm">
-                      ⚠️ Low
-                    </span>
-                  )}
+            
+            {/* Dealer Cards and Deck */}
+            <div className="flex items-center space-x-6">
+              {/* Dealer Cards */}
+              <div className="flex space-x-2">
+                {dealerHand.map((card, index) => (
+                  <PlayingCard 
+                    key={index} 
+                    card={card} 
+                    isHidden={index === 1 && !showDealerScore}
+                  />
+                ))}
+              </div>
+              
+              {/* Deck */}
+              <div className="flex flex-col items-center space-y-2">
+                <div className="flex space-x-1">
+                  <div className="w-16 h-24 bg-blue-800 border-2 border-blue-600 rounded-lg shadow-lg"></div>
+                  <div className="w-16 h-24 bg-blue-800 border-2 border-blue-600 rounded-lg shadow-lg -ml-8"></div>
                 </div>
-                <Progress
-                  value={(cardsRemaining / 104) * 100}
-                  className="mt-2 h-2 bg-slate-600 text-white [&>div]:bg-green-500"
-                />
-              </CardContent>
-            </Card>
+                <div className="bg-gray-800 rounded-lg px-3 py-1">
+                  <span className="text-white text-sm">{cardsRemaining} Cards Left</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-            {deckShuffled && (
-              <Card className="bg-amber-900/80 border-amber-700">
-                <CardContent className="p-3">
-                  <span className="text-white text-sm font-bold">
-                    🔄 Deck Shuffled
-                  </span>
-                </CardContent>
-              </Card>
-            )}
+          {/* Game Information - Middle */}
+          <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+            {/* Total/Pot Display */}
+            <div className="bg-green-800 rounded-lg px-6 py-3">
+              <div className="text-white text-2xl font-bold">${currentBet.toFixed(2)}</div>
+              <div className="text-white text-sm text-center">Total</div>
+            </div>
+            
+            {/* Player Chips
+            <div className="flex space-x-2">
+              <Chip amount={1} onClick={() => {}} size="small" />
+              <Chip amount={5} onClick={() => {}} size="small" />
+              <Chip amount={10} onClick={() => {}} size="small" />
+              <Chip amount={50} onClick={() => {}} size="small" />
+              <Chip amount={100} onClick={() => {}} size="small" />
+            </div> */}
+          </div>
+
+          {/* Player Section - Bottom */}
+          <div className="flex-1 flex flex-col items-center justify-end space-y-4">
+            {/* Player Cards */}
+            <div className="flex space-x-2">
+              {playerHand.map((card, index) => (
+                <PlayingCard key={index} card={card} />
+              ))}
+            </div>
+            
+            {/* Player Label */}
+            <div className="bg-gray-800 rounded-lg px-4 py-2">
+              <span className="text-white font-semibold text-lg">Player</span>
+            </div>
           </div>
         </div>
-
-        {/* Player Section */}
-        <Card className="bg-slate-800/90 border-slate-600">
-          <CardHeader>
-            <CardTitle className="text-2xl font-bold text-white">Player</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HandDisplay
-              hand={playerHand}
-              score={playerScore}
-              isDealer={false}
-            />
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Floating Bottom Panel */}
-      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 border-t border-slate-600 backdrop-blur-sm z-50">
-        <div className="max-w-4xl mx-auto p-4">
-          {/* Betting Interface */}
-          {isBetting && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <p className="text-white text-lg mb-3 font-semibold">Place your bet:</p>
-                <div className="flex flex-wrap justify-center gap-3">
-                  {[1, 5, 10, 50, 100].map((amount) => (
-                    <Chip
-                      key={amount}
-                      amount={amount}
-                      onClick={() => onPlaceBet(amount)}
-                      disabled={credits < amount}
-                      selected={currentBet === amount}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {currentBet > 0 && (
-                <div className="text-center">
-                  <Button
-                    onClick={onStartGame}
-                    size="lg"
-                    className="bg-slate-600 hover:bg-slate-700 text-white px-8 py-3 text-lg"
-                  >
-                    Deal Cards
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Game Actions */}
-          {isGameActive && (
-            <div className="flex flex-wrap justify-center gap-4">
+      {/* Action Buttons - Below Table */}
+      <div className="mt-8 flex justify-center space-x-4">
+        {isGameActive && (
+          <>
+            <Button
+              onClick={onStand}
+              className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-8 text-lg rounded-lg"
+            >
+              Stand
+            </Button>
+            <Button
+              onClick={onHit}
+              className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-8 text-lg rounded-lg"
+            >
+              Hit
+            </Button>
+            {canDoubleDown && (
               <Button
-                onClick={onHit}
-                size="lg"
-                variant="default"
-                className="bg-slate-600 hover:bg-slate-700 text-white px-8 py-3 text-lg"
+                onClick={onDoubleDown}
+                disabled={credits < currentBet}
+                className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-8 text-lg rounded-lg"
               >
-                Hit
+                Double Down
               </Button>
-              <Button
-                onClick={onStand}
-                size="lg"
-                variant="secondary"
-                className="bg-slate-500 hover:bg-slate-600 text-white px-8 py-3 text-lg"
-              >
-                Stand
-              </Button>
-              {canDoubleDown && (
-                <Button
-                  onClick={onDoubleDown}
-                  disabled={credits < currentBet}
-                  variant="secondary"
-                  className="bg-slate-500 hover:bg-slate-600 text-white px-8 py-3 text-lg"
-                >
-                  Double Down
-                </Button>
-              )}
-            </div>
-          )}
+            )}
+          </>
+        )}
+        
+                 {isBetting && (
+           <div className="space-y-4">
+             <div className="text-center">
+               <p className="text-white text-lg mb-3 font-semibold">Place your bet:</p>
+               <div className="flex flex-wrap justify-center gap-3">
+                 {[1, 5, 10, 50, 100].map((amount) => (
+                   <Chip
+                     key={amount}
+                     amount={amount}
+                     onClick={() => onPlaceBet(amount)}
+                     disabled={credits < amount}
+                     selected={currentBet === amount}
+                   />
+                 ))}
+               </div>
+               
+               {/* Undo and Clear buttons - only show when there's a bet */}
+               {currentBet > 0 && (
+                 <div className="flex justify-center gap-3 mt-4">
+                   <Button
+                     onClick={onUndoLastBet}
+                     className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 text-sm rounded-lg"
+                   >
+                     Undo
+                   </Button>
+                   <Button
+                     onClick={onClearBet}
+                     className="bg-red-700 hover:bg-red-600 text-white px-4 py-2 text-sm rounded-lg"
+                   >
+                     Clear
+                   </Button>
+                 </div>
+               )}
+             </div>
+
+             {currentBet > 0 && (
+               <div className="text-center">
+                 <Button
+                   onClick={onStartGame}
+                   size="lg"
+                   className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-3 text-lg rounded-lg"
+                 >
+                   Deal Cards
+                 </Button>
+               </div>
+             )}
+           </div>
+         )}
+      </div>
+
+      {/* Game Status and Info - Top Right */}
+      <div className="absolute top-4 right-4 space-y-2">
+        <div className="bg-gray-800 rounded-lg px-3 py-2">
+          <span className="text-white text-sm">Credits: ${credits}</span>
         </div>
+        <Button
+          onClick={onNewGame}
+          className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 text-sm rounded-lg"
+        >
+          New Game
+        </Button>
       </div>
-    </>
+    </div>
   )
 } 

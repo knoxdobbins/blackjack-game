@@ -17,18 +17,12 @@ export default function BlackjackGame() {
   const handleStartGame = () => dispatch({ type: 'START_GAME' })
   const handleDoubleDown = () => dispatch({ type: 'DOUBLE_DOWN' })
   const handleRemoveBetChip = (amount: number) => dispatch({ type: 'REMOVE_BET_CHIP', amount })
+  const handleUndoLastBet = () => dispatch({ type: 'UNDO_LAST_BET' })
+  const handleClearBet = () => dispatch({ type: 'CLEAR_BET' })
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 p-4">
-      <div className="max-w-4xl mx-auto">
-        <Card className="bg-transparent border-0 shadow-none">
-          <CardHeader className="text-center pb-2">
-            <CardTitle className="text-4xl font-bold text-white">
-              Blackjack
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        
+    <div className="min-h-screen bg-gradient-to-b from-blue-900 to-black p-4">
+      <div className="max-w-6xl mx-auto">
         <GameBoard 
           gameState={gameState}
           onHit={handleHit}
@@ -38,6 +32,8 @@ export default function BlackjackGame() {
           onStartGame={handleStartGame}
           onDoubleDown={handleDoubleDown}
           onRemoveBetChip={handleRemoveBetChip}
+          onUndoLastBet={handleUndoLastBet}
+          onClearBet={handleClearBet}
         />
       </div>
     </div>
