@@ -86,7 +86,11 @@ export function initializeGame(currentCredits: number = 1000): GameState {
     isDoubleDown: false,
     gameResult: null,
     winnings: 0,
-    cardCounter: new CardCounter(2) // 2 decks as per the game setup
+    cardCounter: (() => {
+      const counter = new CardCounter(2) // 2 decks as per the game setup
+      counter.setEnabled(true) // Enable card counting by default
+      return counter
+    })()
   }
 }
 

@@ -43,8 +43,25 @@ function getCardCountChange(cardValue: string): number {
   }
 }
 
-// Basic strategy function
-function getBasicStrategySuggestion(playerScore: number, dealerUpCard: number, canDoubleDown: boolean, gameStatus: string): string {
+// Get betting recommendation based on true count
+function getBettingRecommendation(trueCount: number): string {
+  if (trueCount >= 5) {
+    return 'Maximum (High Adv)'
+  } else if (trueCount >= 3) {
+    return 'High (Good Adv)'
+  } else if (trueCount >= 1) {
+    return 'Above Avg (Slight Adv)'
+  } else if (trueCount >= -1) {
+    return 'Avg (Neutral)'
+  } else if (trueCount >= -3) {
+    return 'Below Avg (Disadv)'
+  } else {
+    return 'Minimum or Sit Out (High Disadv)'
+  }
+}
+
+// Card counting strategy function
+function getCardCountingStrategySuggestion(playerScore: number, dealerUpCard: number, canDoubleDown: boolean, gameStatus: string, trueCount: number): string {
   // Only show suggestions during active play
   if (gameStatus !== 'playing') {
     return ''
@@ -69,6 +86,11 @@ function getBasicStrategySuggestion(playerScore: number, dealerUpCard: number, c
   }
   
   if (playerScore === 9) {
+    // With high count (+3 or higher), double down against dealer 2
+    if (trueCount >= 3 && dealerCard === 2 && canDoubleDown) {
+      return 'Double Down'
+    }
+    // Standard basic strategy
     if (dealerCard >= 3 && dealerCard <= 6 && canDoubleDown) {
       return 'Double Down'
     }
@@ -76,6 +98,11 @@ function getBasicStrategySuggestion(playerScore: number, dealerUpCard: number, c
   }
   
   if (playerScore === 10) {
+    // With high count (+4 or higher), double down against dealer A
+    if (trueCount >= 4 && dealerCard === 11 && canDoubleDown) {
+      return 'Double Down'
+    }
+    // Standard basic strategy
     if (dealerCard <= 9 && canDoubleDown) {
       return 'Double Down'
     }
@@ -90,13 +117,75 @@ function getBasicStrategySuggestion(playerScore: number, dealerUpCard: number, c
   }
   
   if (playerScore === 12) {
+    // With high count (+3 or higher), stand against dealer 3
+    if (trueCount >= 3 && dealerCard === 3) {
+      return 'Stand'
+    }
+    // With high count (+2 or higher), stand against dealer 2
+    if (trueCount >= 2 && dealerCard === 2) {
+      return 'Stand'
+    }
+    // Standard basic strategy
     if (dealerCard >= 4 && dealerCard <= 6) {
       return 'Stand'
     }
     return 'Hit'
   }
   
-  if (playerScore >= 13 && playerScore <= 16) {
+  if (playerScore === 13) {
+    // With high count (+1 or higher), stand against dealer 2
+    if (trueCount >= 1 && dealerCard === 2) {
+      return 'Stand'
+    }
+    // Standard basic strategy
+    if (dealerCard <= 6) {
+      return 'Stand'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore === 14) {
+    // With high count (+3 or higher), stand against dealer 10
+    if (trueCount >= 3 && dealerCard === 10) {
+      return 'Stand'
+    }
+    // Standard basic strategy
+    if (dealerCard <= 6) {
+      return 'Stand'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore === 15) {
+    // With high count (+4 or higher), stand against dealer 10
+    if (trueCount >= 4 && dealerCard === 10) {
+      return 'Stand'
+    }
+    // With high count (+3 or higher), stand against dealer 9
+    if (trueCount >= 3 && dealerCard === 9) {
+      return 'Stand'
+    }
+    // Standard basic strategy
+    if (dealerCard <= 6) {
+      return 'Stand'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore === 16) {
+    // With high count (+6 or higher), stand against dealer 10
+    if (trueCount >= 6 && dealerCard === 10) {
+      return 'Stand'
+    }
+    // With high count (+5 or higher), stand against dealer 9
+    if (trueCount >= 5 && dealerCard === 9) {
+      return 'Stand'
+    }
+    // With high count (+4 or higher), stand against dealer A
+    if (trueCount >= 4 && dealerCard === 11) {
+      return 'Stand'
+    }
+    // Standard basic strategy
     if (dealerCard <= 6) {
       return 'Stand'
     }
@@ -135,9 +224,15 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
     }
   };
 
-  // Get basic strategy suggestion
+  // Get card counting strategy suggestion and betting recommendation
   const dealerUpCard = dealerHand.length > 0 ? dealerHand[0].numericValue : 0
-  const strategySuggestion = getBasicStrategySuggestion(playerScore, dealerUpCard, canDoubleDown, gameStatus)
+  const trueCount = cardCounter.getTrueCount()
+  
+  // Strategy suggestion updates in real-time during play
+  const strategySuggestion = getCardCountingStrategySuggestion(playerScore, dealerUpCard, canDoubleDown, gameStatus, trueCount)
+  
+  // Betting recommendation only updates between rounds (during betting phase)
+  const bettingRecommendation = gameStatus === 'betting' ? getBettingRecommendation(trueCount) : ''
 
   const isGameActive = gameStatus === 'playing'
   const isGameFinished = gameStatus === 'finished'
@@ -348,11 +443,27 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
 
       {/* Card Counting Numbers - Bottom Right Overlay */}
       {cardCounter.isCounterEnabled() && (
-        <div className="absolute bottom-8 right-8 z-40 bg-gray-900 rounded-lg px-4 py-3 flex flex-col items-end shadow-lg border border-gray-700">
+        <div className="absolute bottom-8 right-8 z-40 bg-gray-900 rounded-lg px-4 py-3 flex flex-col items-start shadow-lg border border-gray-700">
           <span className="text-green-300 text-xs font-mono">Running Count: <span className="font-bold">{cardCounter.getRunningCount()}</span></span>
           <span className="text-blue-300 text-xs font-mono">True Count: <span className="font-bold">{cardCounter.getTrueCount().toFixed(2)}</span></span>
           
-          {/* Strategy Suggestion Box */}
+          {/* Betting Recommendation - Only show during betting phase */}
+          {isBetting && (
+            <div className="mt-2 pt-2 border-t border-gray-700">
+              <span className="text-white text-xs font-semibold">Bet Suggestion:</span>
+              <div className={`text-sm font-bold ${
+                trueCount >= 3 ? 'text-green-400' : 
+                trueCount >= 1 ? 'text-yellow-400' : 
+                trueCount >= -1 ? 'text-white' : 
+                trueCount >= -3 ? 'text-orange-400' : 
+                'text-red-400'
+              }`}>
+                {bettingRecommendation}
+              </div>
+            </div>
+          )}
+          
+          {/* Strategy Suggestion Box - Show during active play */}
           {strategySuggestion && (
             <div className="mt-3 pt-3 border-t border-gray-700">
               <span className="text-white text-xs font-semibold">Suggestion:</span>
