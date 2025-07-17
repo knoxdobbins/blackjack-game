@@ -206,9 +206,10 @@ function startGame(state: GameState): GameState {
     newCardCounter.restoreState(previousState)
   }
   
-  // Process all dealt cards
+  // Process only visible cards for card counting
   playerHand.forEach(card => newCardCounter.processCard(card.value))
-  dealerHand.forEach(card => newCardCounter.processCard(card.value))
+  // Only process dealer's first card (up card) - second card is hidden
+  newCardCounter.processCard(dealerHand[0].value)
   
   const playerScore = calculateHandValue(playerHand)
   const dealerScore = calculateHandValue([dealerHand[0]]) // Only show first card
@@ -559,7 +560,10 @@ function handleStand(state: GameState): GameState {
     newCardCounter.restoreState(previousState)
   }
   
-  // Process any newly revealed dealer cards (cards beyond the first two)
+  // Process the dealer's hidden card (second card) when it becomes visible
+  newCardCounter.processCard(currentDealerHand[1].value)
+  
+  // Process any additional dealer cards (cards beyond the first two)
   for (let i = 2; i < currentDealerHand.length; i++) {
     newCardCounter.processCard(currentDealerHand[i].value)
   }

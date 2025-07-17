@@ -10,6 +10,7 @@ import { StackedChips } from './StackedChips'
 import { GameResult } from './GameResult'
 import { useEffect, useState } from 'react'
 import { Switch } from '@/components/ui/switch'
+import { CardCounter } from '@/lib/cardCounter'
 
 interface GameBoardProps {
   gameState: GameState
@@ -23,6 +24,23 @@ interface GameBoardProps {
   onUndoLastBet: () => void
   onClearBet: () => void
   onToggleCardCounting: () => void
+}
+
+// Helper function to calculate count change for a card
+function getCardCountChange(cardValue: string): number {
+  const numericValue = (() => {
+    if (cardValue === 'A') return 14  // Ace is high
+    if (['J', 'Q', 'K'].includes(cardValue)) return 10  // Face cards
+    return parseInt(cardValue)
+  })()
+  
+  if (numericValue >= 2 && numericValue <= 6) {
+    return +1  // Low cards
+  } else if (numericValue >= 7 && numericValue <= 9) {
+    return 0   // Neutral cards
+  } else {
+    return -1  // High cards (10, J, Q, K, A)
+  }
 }
 
 // Basic strategy function
@@ -165,6 +183,8 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
                     key={index} 
                     card={card} 
                     isHidden={index === 1 && !showDealerScore}
+                    countChange={getCardCountChange(card.value)}
+                    showCountChange={cardCounter.isCounterEnabled()}
                   />
                 ))}
               </div>
@@ -205,7 +225,12 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
             {/* Player Cards */}
             <div className="flex space-x-2">
               {playerHand.map((card, index) => (
-                <PlayingCard key={index} card={card} />
+                <PlayingCard 
+                  key={index} 
+                  card={card} 
+                  countChange={getCardCountChange(card.value)}
+                  showCountChange={cardCounter.isCounterEnabled()}
+                />
               ))}
             </div>
             
