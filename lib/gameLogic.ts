@@ -1,3 +1,5 @@
+import { CardCounter } from './cardCounter'
+
 export interface Card {
   suit: 'hearts' | 'diamonds' | 'clubs' | 'spades'
   value: string
@@ -22,6 +24,7 @@ export interface GameState {
   isDoubleDown: boolean
   gameResult?: 'win' | 'lose' | 'tie' | null // Track the result of the last round
   winnings?: number // Track winnings from the last round
+  cardCounter: CardCounter // Card counting system
   // Add this for debugging card counts
   cardCounts?: { [key: string]: number }
 }
@@ -36,6 +39,7 @@ export type GameAction =
   | { type: 'HIT' }
   | { type: 'STAND' }
   | { type: 'DOUBLE_DOWN' }
+  | { type: 'TOGGLE_CARD_COUNTING' }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -57,6 +61,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return handleStand(state)
     case 'DOUBLE_DOWN':
       return handleDoubleDown(state)
+    case 'TOGGLE_CARD_COUNTING':
+      return handleToggleCardCounting(state)
     default:
       return state
   }
@@ -79,7 +85,8 @@ export function initializeGame(currentCredits: number = 1000): GameState {
     canDoubleDown: false,
     isDoubleDown: false,
     gameResult: null,
-    winnings: 0
+    winnings: 0,
+    cardCounter: new CardCounter(2) // 2 decks as per the game setup
   }
 }
 
@@ -160,6 +167,16 @@ function handleClearBet(state: GameState): GameState {
   }
 }
 
+function handleToggleCardCounting(state: GameState): GameState {
+  const newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+  newCardCounter.setEnabled(!state.cardCounter.isCounterEnabled())
+  
+  return {
+    ...state,
+    cardCounter: newCardCounter
+  }
+}
+
 function startGame(state: GameState): GameState {
   if (state.gameStatus !== 'betting' || state.currentBet === 0) return state
   
@@ -173,6 +190,25 @@ function startGame(state: GameState): GameState {
   
   // Hide dealer's second card
   dealerHand[1] = { ...dealerHand[1], isHidden: true }
+  
+  // Handle card counter - preserve existing count unless deck was shuffled
+  let newCardCounter: CardCounter
+  if (deckShuffled) {
+    // New deck created, reset the counter
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+  } else {
+    // Same deck, preserve existing counter state
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+    // Restore the previous count state
+    const previousState = state.cardCounter.getState()
+    newCardCounter.restoreState(previousState)
+  }
+  
+  // Process all dealt cards
+  playerHand.forEach(card => newCardCounter.processCard(card.value))
+  dealerHand.forEach(card => newCardCounter.processCard(card.value))
   
   const playerScore = calculateHandValue(playerHand)
   const dealerScore = calculateHandValue([dealerHand[0]]) // Only show first card
@@ -282,7 +318,8 @@ function startGame(state: GameState): GameState {
     currentBet: gameStatus !== 'playing' ? 0 : state.currentBet,
     selectedChips: gameStatus !== 'playing' ? {} : state.selectedChips,
     gameResult: null,
-    winnings: 0
+    winnings: 0,
+    cardCounter: newCardCounter
   }
 }
 
@@ -316,6 +353,24 @@ function handleDoubleDown(state: GameState): GameState {
   const newPlayerHand = [...state.playerHand, newCard]
   const newPlayerScore = calculateHandValue(newPlayerHand)
   
+  // Handle card counter - preserve existing count unless deck was shuffled
+  let newCardCounter: CardCounter
+  if (deckShuffled && !state.deckShuffled) {
+    // Deck was just shuffled, reset the counter
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+  } else {
+    // Same deck, preserve existing counter state
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+    // Restore the previous count state
+    const previousState = state.cardCounter.getState()
+    newCardCounter.restoreState(previousState)
+  }
+  
+  // Process the new card
+  newCardCounter.processCard(newCard.value)
+  
   let newGameStatus: GameState['gameStatus'] = 'dealer-turn'
   let finalMessage = newMessage
   
@@ -341,7 +396,8 @@ function handleDoubleDown(state: GameState): GameState {
       isDoubleDown: true,
       gameResult: 'lose',
       winnings: -newBet, // Show the amount lost (negative) - double the bet
-      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips
+      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips,
+      cardCounter: newCardCounter
     }
   } else {
     finalMessage = 'Double Down! Dealer\'s turn.'
@@ -356,7 +412,8 @@ function handleDoubleDown(state: GameState): GameState {
       credits: newCredits,
       currentBet: newBet,
       canDoubleDown: false,
-      isDoubleDown: true
+      isDoubleDown: true,
+      cardCounter: newCardCounter
     })
   }
   
@@ -372,7 +429,8 @@ function handleDoubleDown(state: GameState): GameState {
     credits: newCredits,
     currentBet: newBet,
     canDoubleDown: false,
-    isDoubleDown: true
+    isDoubleDown: true,
+    cardCounter: newCardCounter
   }
 }
 
@@ -393,6 +451,24 @@ function handleHit(state: GameState): GameState {
   const newCard = newDeck.pop()!
   const newPlayerHand = [...state.playerHand, newCard]
   const newPlayerScore = calculateHandValue(newPlayerHand)
+  
+  // Handle card counter - preserve existing count unless deck was shuffled
+  let newCardCounter: CardCounter
+  if (deckShuffled && !state.deckShuffled) {
+    // Deck was just shuffled, reset the counter
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+  } else {
+    // Same deck, preserve existing counter state
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+    // Restore the previous count state
+    const previousState = state.cardCounter.getState()
+    newCardCounter.restoreState(previousState)
+  }
+  
+  // Process the new card
+  newCardCounter.processCard(newCard.value)
   
   let newGameStatus: GameState['gameStatus'] = state.gameStatus
   
@@ -416,7 +492,8 @@ function handleHit(state: GameState): GameState {
       gameResult: 'lose',
       winnings: -state.currentBet, // Show the amount lost (negative)
       currentBet: newGameStatus === 'betting' ? 0 : state.currentBet,
-      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips
+      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips,
+      cardCounter: newCardCounter
     }
   } else if (newPlayerScore === 21) {
     // Automatically trigger dealer's turn when player gets 21
@@ -426,7 +503,8 @@ function handleHit(state: GameState): GameState {
       deck: newDeck,
       playerScore: newPlayerScore,
       cardsRemaining: newDeck.length,
-      deckShuffled
+      deckShuffled,
+      cardCounter: newCardCounter
     })
   } else {
     newMessage = newMessage || 'Your turn! Hit or Stand?'
@@ -441,7 +519,8 @@ function handleHit(state: GameState): GameState {
     message: newMessage,
     cardsRemaining: newDeck.length,
     deckShuffled,
-    canDoubleDown: false // Can't double down after hitting
+    canDoubleDown: false, // Can't double down after hitting
+    cardCounter: newCardCounter
   }
 }
 
@@ -461,11 +540,30 @@ function handleStand(state: GameState): GameState {
       currentDeck = shuffleDeck(createDeck())
       deckShuffled = true
     }
-    
     const newCard = currentDeck.pop()!
     currentDealerHand = [...currentDealerHand, newCard]
   }
+
+  // Handle card counter - preserve existing count unless deck was shuffled
+  let newCardCounter: CardCounter
+  if (deckShuffled && !state.deckShuffled) {
+    // Deck was just shuffled, reset the counter
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+  } else {
+    // Same deck, preserve existing counter state
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+    // Restore the previous count state
+    const previousState = state.cardCounter.getState()
+    newCardCounter.restoreState(previousState)
+  }
   
+  // Process any newly revealed dealer cards (cards beyond the first two)
+  for (let i = 2; i < currentDealerHand.length; i++) {
+    newCardCounter.processCard(currentDealerHand[i].value)
+  }
+
   const finalDealerScore = calculateHandValue(currentDealerHand)
   const finalPlayerScore = state.playerScore
   
@@ -517,7 +615,8 @@ function handleStand(state: GameState): GameState {
     canDoubleDown: false,
     isDoubleDown: false,
     gameResult,
-    winnings
+    winnings,
+    cardCounter: newCardCounter
   }
 }
 

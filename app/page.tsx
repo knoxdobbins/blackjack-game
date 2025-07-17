@@ -19,6 +19,7 @@ export default function BlackjackGame() {
   const handleRemoveBetChip = (amount: number) => dispatch({ type: 'REMOVE_BET_CHIP', amount })
   const handleUndoLastBet = () => dispatch({ type: 'UNDO_LAST_BET' })
   const handleClearBet = () => dispatch({ type: 'CLEAR_BET' })
+  const handleToggleCardCounting = () => dispatch({ type: 'TOGGLE_CARD_COUNTING' })
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 to-black p-4">
@@ -34,6 +35,7 @@ export default function BlackjackGame() {
           onRemoveBetChip={handleRemoveBetChip}
           onUndoLastBet={handleUndoLastBet}
           onClearBet={handleClearBet}
+          onToggleCardCounting={handleToggleCardCounting}
         />
       </div>
     </div>

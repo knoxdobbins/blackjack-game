@@ -9,6 +9,7 @@ import { Chip } from './Chip'
 import { StackedChips } from './StackedChips'
 import { GameResult } from './GameResult'
 import { useEffect, useState } from 'react'
+import { Switch } from '@/components/ui/switch'
 
 interface GameBoardProps {
   gameState: GameState
@@ -21,13 +22,81 @@ interface GameBoardProps {
   onRemoveBetChip: (amount: number) => void
   onUndoLastBet: () => void
   onClearBet: () => void
+  onToggleCardCounting: () => void
 }
 
-export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip, onUndoLastBet, onClearBet }: GameBoardProps) {
-  const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown, gameResult, winnings } = gameState
+// Basic strategy function
+function getBasicStrategySuggestion(playerScore: number, dealerUpCard: number, canDoubleDown: boolean, gameStatus: string): string {
+  // Only show suggestions during active play
+  if (gameStatus !== 'playing') {
+    return ''
+  }
+
+  // If player has blackjack (21), always stand
+  if (playerScore === 21) {
+    return 'Stand'
+  }
+
+  // If player busts, no suggestion needed
+  if (playerScore > 21) {
+    return ''
+  }
+
+  // Get dealer's up card value (first card)
+  const dealerCard = dealerUpCard
+
+  // Hard totals (no ace counted as 11)
+  if (playerScore <= 8) {
+    return 'Hit'
+  }
+  
+  if (playerScore === 9) {
+    if (dealerCard >= 3 && dealerCard <= 6 && canDoubleDown) {
+      return 'Double Down'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore === 10) {
+    if (dealerCard <= 9 && canDoubleDown) {
+      return 'Double Down'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore === 11) {
+    if (canDoubleDown) {
+      return 'Double Down'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore === 12) {
+    if (dealerCard >= 4 && dealerCard <= 6) {
+      return 'Stand'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore >= 13 && playerScore <= 16) {
+    if (dealerCard <= 6) {
+      return 'Stand'
+    }
+    return 'Hit'
+  }
+  
+  if (playerScore >= 17) {
+    return 'Stand'
+  }
+
+  return 'Hit'
+}
+
+export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip, onUndoLastBet, onClearBet, onToggleCardCounting }: GameBoardProps) {
+  const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown, gameResult, winnings, cardCounter } = gameState;
   
   const [showResult, setShowResult] = useState(false)
-  
+
   // Show result when game finishes and hide after 3 seconds
   useEffect(() => {
     if (gameResult && gameStatus === 'betting') {
@@ -40,6 +109,17 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
       setShowResult(false)
     }
   }, [gameResult, gameStatus])
+
+  // Handler for toggling card counting
+  const handleToggleCardCounting = () => {
+    if (typeof onToggleCardCounting === 'function') {
+      onToggleCardCounting();
+    }
+  };
+
+  // Get basic strategy suggestion
+  const dealerUpCard = dealerHand.length > 0 ? dealerHand[0].numericValue : 0
+  const strategySuggestion = getBasicStrategySuggestion(playerScore, dealerUpCard, canDoubleDown, gameStatus)
 
   const isGameActive = gameStatus === 'playing'
   const isGameFinished = gameStatus === 'finished'
@@ -224,7 +304,12 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
       </div>
 
       {/* Game Status and Info - Top Right */}
-      <div className="absolute top-4 right-4 space-y-2">
+      <div className="absolute top-4 right-4 space-y-2 flex flex-col items-end">
+        {/* Card Counting Toggle */}
+        <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 mb-2">
+          <span className="text-white text-sm">Card Counting Practice</span>
+          <Switch checked={cardCounter.isCounterEnabled()} onCheckedChange={handleToggleCardCounting} />
+        </div>
         <div className="bg-gray-800 rounded-lg px-3 py-2">
           <span className="text-white text-sm">Credits: ${credits}</span>
         </div>
@@ -235,6 +320,22 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
           New Game
         </Button>
       </div>
+
+      {/* Card Counting Numbers - Bottom Right Overlay */}
+      {cardCounter.isCounterEnabled() && (
+        <div className="absolute bottom-8 right-8 z-40 bg-gray-900 rounded-lg px-4 py-3 flex flex-col items-end shadow-lg border border-gray-700">
+          <span className="text-green-300 text-xs font-mono">Running Count: <span className="font-bold">{cardCounter.getRunningCount()}</span></span>
+          <span className="text-blue-300 text-xs font-mono">True Count: <span className="font-bold">{cardCounter.getTrueCount().toFixed(2)}</span></span>
+          
+          {/* Strategy Suggestion Box */}
+          {strategySuggestion && (
+            <div className="mt-3 pt-3 border-t border-gray-700">
+              <span className="text-white text-xs font-semibold">Suggestion:</span>
+              <div className="text-yellow-300 text-sm font-bold">{strategySuggestion}</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 } 
