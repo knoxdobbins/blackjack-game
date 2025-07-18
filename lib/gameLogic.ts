@@ -27,6 +27,13 @@ export interface GameState {
   cardCounter: CardCounter // Card counting system
   // Add this for debugging card counts
   cardCounts?: { [key: string]: number }
+  // Split functionality
+  splitHands: Card[][]
+  currentHandIndex: number
+  splitBets: number[]
+  canSplit: boolean
+  isSplit: boolean
+  splitCount: number // Track how many times we've split (max 3)
 }
 
 export type GameAction = 
@@ -40,6 +47,7 @@ export type GameAction =
   | { type: 'STAND' }
   | { type: 'DOUBLE_DOWN' }
   | { type: 'TOGGLE_CARD_COUNTING' }
+  | { type: 'SPLIT' }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -63,6 +71,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return handleDoubleDown(state)
     case 'TOGGLE_CARD_COUNTING':
       return handleToggleCardCounting(state)
+    case 'SPLIT':
+      return handleSplit(state)
     default:
       return state
   }
@@ -90,7 +100,14 @@ export function initializeGame(currentCredits: number = 1000): GameState {
       const counter = new CardCounter(2) // 2 decks as per the game setup
       counter.setEnabled(true) // Enable card counting by default
       return counter
-    })()
+    })(),
+    // Initialize split properties
+    splitHands: [],
+    currentHandIndex: 0,
+    splitBets: [],
+    canSplit: false,
+    isSplit: false,
+    splitCount: 0
   }
 }
 
@@ -181,6 +198,28 @@ function handleToggleCardCounting(state: GameState): GameState {
   }
 }
 
+// Helper function to check if splitting is possible
+function canSplitHand(hand: Card[], credits: number, currentBet: number, splitCount: number): boolean {
+  // Must have exactly 2 cards
+  if (hand.length !== 2) return false
+  
+  // Must have enough credits for equal bet
+  if (credits < currentBet) return false
+  
+  // Maximum 3 splits allowed (4 total hands)
+  if (splitCount >= 3) return false
+  
+  // Cards must have the same value (10, J, Q, K all count as 10)
+  const value1 = hand[0].numericValue
+  const value2 = hand[1].numericValue
+  
+  // Handle face cards (J, Q, K) and 10s
+  const normalizedValue1 = value1 >= 10 ? 10 : value1
+  const normalizedValue2 = value2 >= 10 ? 10 : value2
+  
+  return normalizedValue1 === normalizedValue2
+}
+
 function startGame(state: GameState): GameState {
   if (state.gameStatus !== 'betting' || state.currentBet === 0) return state
   
@@ -198,7 +237,7 @@ function startGame(state: GameState): GameState {
   // Handle card counter - preserve existing count unless deck was shuffled
   let newCardCounter: CardCounter
   if (deckShuffled) {
-    // New deck created, reset the counter
+    // Deck was just shuffled, reset the counter
     newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
     newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
   } else {
@@ -210,101 +249,45 @@ function startGame(state: GameState): GameState {
     newCardCounter.restoreState(previousState)
   }
   
-  // Process only visible cards for card counting
+  // Process the dealt cards
   playerHand.forEach(card => newCardCounter.processCard(card.value))
-  // Only process dealer's first card (up card) - second card is hidden
-  newCardCounter.processCard(dealerHand[0].value)
+  dealerHand.forEach(card => newCardCounter.processCard(card.value))
   
   const playerScore = calculateHandValue(playerHand)
-  const dealerScore = calculateHandValue([dealerHand[0]]) // Only show first card
+  const dealerScore = calculateHandValue(dealerHand)
   
-  // Check for natural blackjack
+  // Check for blackjack
   const playerBlackjack = isBlackjack(playerHand)
-  const dealerBlackjack = isBlackjack([dealerHand[0], dealerHand[1]])
-  
-  // Check if player can double down (only on first two cards, total 9-11)
-  const canDoubleDown = playerHand.length === 2 && playerScore >= 9 && playerScore <= 11
+  const dealerBlackjack = isBlackjack(dealerHand)
   
   let gameStatus: GameState['gameStatus'] = 'playing'
-  let message = 'Your turn! Hit, Stand, or Double Down?'
-  let newCredits = state.credits
+  let message = 'Your turn!'
+  let gameResult: 'win' | 'lose' | 'tie' | null = null
+  let winnings = 0
+  let canDoubleDown = false
+  let canSplit = false
   
   if (playerBlackjack && dealerBlackjack) {
-    // Return the bet
-    newCredits += state.currentBet
-    const canContinuePlaying = newCredits > 0
-    gameStatus = canContinuePlaying ? 'betting' : 'finished'
-    message = canContinuePlaying 
-      ? 'Push! Both have blackjack. Place your next bet!'
-      : 'Push! Both have blackjack. Game Over - No credits left!'
-    return {
-      ...state,
-      playerHand,
-      dealerHand,
-      deck: shuffledDeck,
-      gameStatus,
-      playerScore,
-      dealerScore,
-      message,
-      cardsRemaining: shuffledDeck.length,
-      deckShuffled,
-      canDoubleDown,
-      credits: newCredits,
-      currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
-      selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
-      gameResult: 'tie',
-      winnings: 0
-    }
+    gameStatus = 'betting'
+    message = 'Push! Both you and dealer have blackjack.'
+    gameResult = 'tie'
+    winnings = 0
   } else if (playerBlackjack) {
-    const winnings = state.currentBet + Math.floor(state.currentBet * 1.5) // Return bet + 1.5x bonus
-    newCredits += winnings
-    const canContinuePlaying = newCredits > 0
-    gameStatus = canContinuePlaying ? 'betting' : 'finished'
-    message = canContinuePlaying 
-      ? `Blackjack! You win $${winnings}! (1.5x your bet) Place your next bet!`
-      : `Blackjack! You win $${winnings}! (1.5x your bet) Game Over - No credits left!`
-    return {
-      ...state,
-      playerHand,
-      dealerHand,
-      deck: shuffledDeck,
-      gameStatus,
-      playerScore,
-      dealerScore,
-      message,
-      cardsRemaining: shuffledDeck.length,
-      deckShuffled,
-      canDoubleDown,
-      credits: newCredits,
-      currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
-      selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
-      gameResult: 'win',
-      winnings
-    }
+    gameStatus = 'betting'
+    message = 'Blackjack! You win!'
+    gameResult = 'win'
+    winnings = state.currentBet + Math.floor(state.currentBet * 1.5)
   } else if (dealerBlackjack) {
-    const canContinuePlaying = newCredits > 0
-    gameStatus = canContinuePlaying ? 'betting' : 'finished'
-    message = canContinuePlaying 
-      ? 'Dealer has blackjack! You lose. Place your next bet!'
-      : 'Dealer has blackjack! You lose. Game Over - No credits left!'
-    return {
-      ...state,
-      playerHand,
-      dealerHand,
-      deck: shuffledDeck,
-      gameStatus,
-      playerScore,
-      dealerScore,
-      message,
-      cardsRemaining: shuffledDeck.length,
-      deckShuffled,
-      canDoubleDown,
-      credits: newCredits,
-      currentBet: gameStatus === 'betting' ? 0 : state.currentBet,
-      selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
-      gameResult: 'lose',
-      winnings: -state.currentBet // Show the amount lost (negative)
-    }
+    gameStatus = 'betting'
+    message = 'Dealer has blackjack! You lose.'
+    gameResult = 'lose'
+    winnings = -state.currentBet
+  } else {
+    // Check if player can double down (only on first two cards)
+    canDoubleDown = playerHand.length === 2 && state.credits >= state.currentBet
+    
+    // Check if player can split
+    canSplit = canSplitHand(playerHand, state.credits, state.currentBet, state.splitCount)
   }
   
   return {
@@ -319,38 +302,37 @@ function startGame(state: GameState): GameState {
     cardsRemaining: shuffledDeck.length,
     deckShuffled,
     canDoubleDown,
-    credits: newCredits,
-    currentBet: gameStatus !== 'playing' ? 0 : state.currentBet,
-    selectedChips: gameStatus !== 'playing' ? {} : state.selectedChips,
-    gameResult: null,
-    winnings: 0,
-    cardCounter: newCardCounter
+    canSplit,
+    isDoubleDown: false,
+    gameResult,
+    winnings,
+    selectedChips: gameStatus === 'betting' ? {} : state.selectedChips,
+    cardCounter: newCardCounter,
+    // Reset split state for new game
+    splitHands: [],
+    currentHandIndex: 0,
+    splitBets: [],
+    isSplit: false
   }
 }
 
 function handleDoubleDown(state: GameState): GameState {
-  if (state.gameStatus !== 'playing' || !state.canDoubleDown || state.isDoubleDown) return state
+  if (state.gameStatus !== 'playing' || !state.canDoubleDown) return state
   
-  // Check if player has enough credits to double down
+  // Check if player has enough credits for double down
   if (state.credits < state.currentBet) {
     return {
       ...state,
       message: 'Not enough credits to double down!'
     }
   }
-  
-  // Double the bet and take one more card
-  const newCredits = state.credits - state.currentBet
-  const newBet = state.currentBet * 2
-  
+
   let newDeck = [...state.deck]
-  let newMessage = state.message
   let deckShuffled = state.deckShuffled
   
   // Check if we need to reshuffle
   if (newDeck.length <= 30) {
     newDeck = shuffleDeck(createDeck())
-    newMessage = 'Deck reshuffled!'
     deckShuffled = true
   }
   
@@ -358,17 +340,14 @@ function handleDoubleDown(state: GameState): GameState {
   const newPlayerHand = [...state.playerHand, newCard]
   const newPlayerScore = calculateHandValue(newPlayerHand)
   
-  // Handle card counter - preserve existing count unless deck was shuffled
+  // Handle card counter
   let newCardCounter: CardCounter
   if (deckShuffled && !state.deckShuffled) {
-    // Deck was just shuffled, reset the counter
     newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
     newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
   } else {
-    // Same deck, preserve existing counter state
     newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
     newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
-    // Restore the previous count state
     const previousState = state.cardCounter.getState()
     newCardCounter.restoreState(previousState)
   }
@@ -376,66 +355,111 @@ function handleDoubleDown(state: GameState): GameState {
   // Process the new card
   newCardCounter.processCard(newCard.value)
   
-  let newGameStatus: GameState['gameStatus'] = 'dealer-turn'
-  let finalMessage = newMessage
+  // Deduct the double down bet
+  const newCredits = state.credits - state.currentBet
+  const doubleDownBet = state.currentBet * 2
   
-  if (newPlayerScore > 21) {
-    const canContinuePlaying = newCredits > 0
-    newGameStatus = canContinuePlaying ? 'betting' : 'finished'
-    finalMessage = canContinuePlaying 
-      ? 'Double Down Bust! You lose. Place your next bet!'
-      : 'Double Down Bust! You lose. Game Over - No credits left!'
+  // Handle split hands double down
+  if (state.isSplit) {
+    // Update the current split hand
+    const updatedSplitHands = [...state.splitHands]
+    updatedSplitHands[state.currentHandIndex] = newPlayerHand
     
-    return {
-      ...state,
-      playerHand: newPlayerHand,
-      deck: newDeck,
-      gameStatus: newGameStatus,
-      playerScore: newPlayerScore,
-      message: finalMessage,
-      cardsRemaining: newDeck.length,
-      deckShuffled,
-      credits: newCredits,
-      currentBet: newGameStatus === 'betting' ? 0 : newBet,
-      canDoubleDown: false,
-      isDoubleDown: true,
-      gameResult: 'lose',
-      winnings: -newBet, // Show the amount lost (negative) - double the bet
-      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips,
-      cardCounter: newCardCounter
+    // Update the bet for this hand
+    const updatedSplitBets = [...state.splitBets]
+    updatedSplitBets[state.currentHandIndex] = doubleDownBet
+    
+    let message = ''
+    let gameStatus: GameState['gameStatus'] = 'playing'
+    
+    if (newPlayerScore > 21) {
+      message = `Hand ${state.currentHandIndex + 1} double down bust!`
+    } else if (newPlayerScore === 21) {
+      message = `Hand ${state.currentHandIndex + 1} double down 21!`
+    } else {
+      message = `Hand ${state.currentHandIndex + 1} double down complete.`
+    }
+    
+    // Check if there are more hands to play
+    if (state.currentHandIndex < state.splitHands.length - 1) {
+      // Move to next split hand
+      const nextHandIndex = state.currentHandIndex + 1
+      const nextHand = state.splitHands[nextHandIndex]
+      const nextHandScore = calculateHandValue(nextHand)
+      
+      return {
+        ...state,
+        playerHand: nextHand,
+        splitHands: updatedSplitHands,
+        splitBets: updatedSplitBets,
+        currentHandIndex: nextHandIndex,
+        playerScore: nextHandScore,
+        currentBet: state.splitBets[nextHandIndex],
+        canDoubleDown: nextHand.length === 2 && newCredits >= state.splitBets[nextHandIndex],
+        deck: newDeck,
+        cardsRemaining: newDeck.length,
+        deckShuffled,
+        credits: newCredits,
+        cardCounter: newCardCounter,
+        message: `${message} Playing Hand ${nextHandIndex + 1}`
+      }
+    } else {
+      // All split hands are done, move to dealer's turn
+      return handleStand({
+        ...state,
+        playerHand: newPlayerHand,
+        splitHands: updatedSplitHands,
+        splitBets: updatedSplitBets,
+        deck: newDeck,
+        playerScore: newPlayerScore,
+        cardsRemaining: newDeck.length,
+        deckShuffled,
+        credits: newCredits,
+        cardCounter: newCardCounter
+      })
     }
   } else {
-    finalMessage = 'Double Down! Dealer\'s turn.'
-    // Automatically trigger dealer's turn when double down doesn't bust
-    return handleStand({
-      ...state,
-      playerHand: newPlayerHand,
-      deck: newDeck,
-      playerScore: newPlayerScore,
-      cardsRemaining: newDeck.length,
-      deckShuffled,
-      credits: newCredits,
-      currentBet: newBet,
-      canDoubleDown: false,
-      isDoubleDown: true,
-      cardCounter: newCardCounter
-    })
-  }
-  
-  return {
-    ...state,
-    playerHand: newPlayerHand,
-    deck: newDeck,
-    gameStatus: newGameStatus,
-    playerScore: newPlayerScore,
-    message: finalMessage,
-    cardsRemaining: newDeck.length,
-    deckShuffled,
-    credits: newCredits,
-    currentBet: newBet,
-    canDoubleDown: false,
-    isDoubleDown: true,
-    cardCounter: newCardCounter
+    // Regular double down
+    if (newPlayerScore > 21) {
+      const canContinuePlaying = newCredits > 0
+      const gameStatus = canContinuePlaying ? 'betting' : 'finished'
+      const message = canContinuePlaying 
+        ? 'Double down bust! You lose! Place your next bet!'
+        : 'Double down bust! You lose! Game Over - No credits left!'
+      
+      return {
+        ...state,
+        playerHand: newPlayerHand,
+        deck: newDeck,
+        gameStatus,
+        playerScore: newPlayerScore,
+        message,
+        cardsRemaining: newDeck.length,
+        deckShuffled,
+        credits: newCredits,
+        currentBet: 0,
+        selectedChips: {},
+        canDoubleDown: false,
+        isDoubleDown: true,
+        gameResult: 'lose',
+        winnings: -doubleDownBet,
+        cardCounter: newCardCounter
+      }
+    } else {
+      // Automatically trigger dealer's turn when player double downs
+      return handleStand({
+        ...state,
+        playerHand: newPlayerHand,
+        deck: newDeck,
+        playerScore: newPlayerScore,
+        cardsRemaining: newDeck.length,
+        deckShuffled,
+        credits: newCredits,
+        currentBet: doubleDownBet,
+        isDoubleDown: true,
+        cardCounter: newCardCounter
+      })
+    }
   }
 }
 
@@ -478,41 +502,149 @@ function handleHit(state: GameState): GameState {
   let newGameStatus: GameState['gameStatus'] = state.gameStatus
   
   if (newPlayerScore > 21) {
-    const canContinuePlaying = state.credits > 0
-    newGameStatus = canContinuePlaying ? 'betting' : 'finished'
-    newMessage = canContinuePlaying 
-      ? 'Bust! You lose! Place your next bet!'
-      : 'Bust! You lose! Game Over - No credits left!'
+    // Handle bust for split hands
+    if (state.isSplit) {
+      // Update the current split hand
+      const updatedSplitHands = [...state.splitHands]
+      updatedSplitHands[state.currentHandIndex] = newPlayerHand
+      
+      // Check if there are more hands to play
+      if (state.currentHandIndex < state.splitHands.length - 1) {
+        // Move to next split hand
+        const nextHandIndex = state.currentHandIndex + 1
+        const nextHand = state.splitHands[nextHandIndex]
+        const nextHandScore = calculateHandValue(nextHand)
+        
+        return {
+          ...state,
+          playerHand: nextHand,
+          splitHands: updatedSplitHands,
+          currentHandIndex: nextHandIndex,
+          playerScore: nextHandScore,
+          currentBet: state.splitBets[nextHandIndex],
+          canDoubleDown: nextHand.length === 2 && state.credits >= state.splitBets[nextHandIndex],
+          deck: newDeck,
+          cardsRemaining: newDeck.length,
+          deckShuffled,
+          cardCounter: newCardCounter,
+          message: `Hand ${state.currentHandIndex + 1} bust! Playing Hand ${nextHandIndex + 1}`
+        }
+      } else {
+        // All split hands are done, move to dealer's turn
+        return handleStand({
+          ...state,
+          playerHand: newPlayerHand,
+          splitHands: updatedSplitHands,
+          deck: newDeck,
+          playerScore: newPlayerScore,
+          cardsRemaining: newDeck.length,
+          deckShuffled,
+          cardCounter: newCardCounter
+        })
+      }
+    } else {
+      // Regular hand bust
+      const canContinuePlaying = state.credits > 0
+      newGameStatus = canContinuePlaying ? 'betting' : 'finished'
+      newMessage = canContinuePlaying 
+        ? 'Bust! You lose! Place your next bet!'
+        : 'Bust! You lose! Game Over - No credits left!'
+      
+      return {
+        ...state,
+        playerHand: newPlayerHand,
+        deck: newDeck,
+        gameStatus: newGameStatus,
+        playerScore: newPlayerScore,
+        message: newMessage,
+        cardsRemaining: newDeck.length,
+        deckShuffled,
+        canDoubleDown: false,
+        gameResult: 'lose',
+        winnings: -state.currentBet, // Show the amount lost (negative)
+        currentBet: newGameStatus === 'betting' ? 0 : state.currentBet,
+        selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips,
+        cardCounter: newCardCounter
+      }
+    }
+  } else if (newPlayerScore === 21) {
+    // Automatically trigger dealer's turn when player gets 21
+    if (state.isSplit) {
+      // Update the current split hand
+      const updatedSplitHands = [...state.splitHands]
+      updatedSplitHands[state.currentHandIndex] = newPlayerHand
+      
+      // Check if there are more hands to play
+      if (state.currentHandIndex < state.splitHands.length - 1) {
+        // Move to next split hand
+        const nextHandIndex = state.currentHandIndex + 1
+        const nextHand = state.splitHands[nextHandIndex]
+        const nextHandScore = calculateHandValue(nextHand)
+        
+        return {
+          ...state,
+          playerHand: nextHand,
+          splitHands: updatedSplitHands,
+          currentHandIndex: nextHandIndex,
+          playerScore: nextHandScore,
+          currentBet: state.splitBets[nextHandIndex],
+          canDoubleDown: nextHand.length === 2 && state.credits >= state.splitBets[nextHandIndex],
+          deck: newDeck,
+          cardsRemaining: newDeck.length,
+          deckShuffled,
+          cardCounter: newCardCounter,
+          message: `Hand ${state.currentHandIndex + 1} got 21! Playing Hand ${nextHandIndex + 1}`
+        }
+      } else {
+        // All split hands are done, move to dealer's turn
+        return handleStand({
+          ...state,
+          playerHand: newPlayerHand,
+          splitHands: updatedSplitHands,
+          deck: newDeck,
+          playerScore: newPlayerScore,
+          cardsRemaining: newDeck.length,
+          deckShuffled,
+          cardCounter: newCardCounter
+        })
+      }
+    } else {
+      return handleStand({
+        ...state,
+        playerHand: newPlayerHand,
+        deck: newDeck,
+        playerScore: newPlayerScore,
+        cardsRemaining: newDeck.length,
+        deckShuffled,
+        cardCounter: newCardCounter
+      })
+    }
+  } else {
+    newMessage = newMessage || 'Your turn! Hit or Stand?'
+  }
+  
+  // Update the current split hand if this is a split
+  if (state.isSplit) {
+    const updatedSplitHands = [...state.splitHands]
+    updatedSplitHands[state.currentHandIndex] = newPlayerHand
+    
+    // Check if we can split the current hand (resplit)
+    const canResplit = canSplitHand(newPlayerHand, state.credits, state.currentBet, state.splitCount)
     
     return {
       ...state,
       playerHand: newPlayerHand,
+      splitHands: updatedSplitHands,
+      canSplit: canResplit, // Update canSplit for resplitting
       deck: newDeck,
       gameStatus: newGameStatus,
       playerScore: newPlayerScore,
       message: newMessage,
       cardsRemaining: newDeck.length,
       deckShuffled,
-      canDoubleDown: false,
-      gameResult: 'lose',
-      winnings: -state.currentBet, // Show the amount lost (negative)
-      currentBet: newGameStatus === 'betting' ? 0 : state.currentBet,
-      selectedChips: newGameStatus === 'betting' ? {} : state.selectedChips,
+      canDoubleDown: false, // Can't double down after hitting
       cardCounter: newCardCounter
     }
-  } else if (newPlayerScore === 21) {
-    // Automatically trigger dealer's turn when player gets 21
-    return handleStand({
-      ...state,
-      playerHand: newPlayerHand,
-      deck: newDeck,
-      playerScore: newPlayerScore,
-      cardsRemaining: newDeck.length,
-      deckShuffled,
-      cardCounter: newCardCounter
-    })
-  } else {
-    newMessage = newMessage || 'Your turn! Hit or Stand?'
   }
   
   return {
@@ -532,21 +664,44 @@ function handleHit(state: GameState): GameState {
 function handleStand(state: GameState): GameState {
   if (state.gameStatus !== 'playing') return state
   
+  // If this is a split hand, check if there are more hands to play
+  if (state.isSplit && state.currentHandIndex < state.splitHands.length - 1) {
+    // Move to next split hand
+    const nextHandIndex = state.currentHandIndex + 1
+    const nextHand = state.splitHands[nextHandIndex]
+    const nextHandScore = calculateHandValue(nextHand)
+    
+    return {
+      ...state,
+      playerHand: nextHand,
+      currentHandIndex: nextHandIndex,
+      playerScore: nextHandScore,
+      currentBet: state.splitBets[nextHandIndex],
+      canDoubleDown: nextHand.length === 2 && state.credits >= state.splitBets[nextHandIndex],
+      message: `Playing Hand ${nextHandIndex + 1}`
+    }
+  }
+  
+  // If this is the last split hand or not a split, move to dealer's turn
+  const gameStatus: GameState['gameStatus'] = 'dealer-turn'
+  
   // Reveal dealer's hidden card
-  const revealedDealerHand = state.dealerHand.map(card => ({ ...card, isHidden: false })) as Card[]
-  let currentDealerHand = revealedDealerHand
+  const currentDealerHand = [...state.dealerHand]
+  currentDealerHand[1] = { ...currentDealerHand[1], isHidden: false }
+  
   let currentDeck = [...state.deck]
   let deckShuffled = state.deckShuffled
   
-  // Dealer plays their hand
+  // Dealer plays according to house rules (hit on 16 or less, stand on 17 or more)
   while (calculateHandValue(currentDealerHand) < 17) {
-    // Check if we need to reshuffle during dealer's turn
+    // Check if we need to reshuffle
     if (currentDeck.length <= 30) {
       currentDeck = shuffleDeck(createDeck())
       deckShuffled = true
     }
+    
     const newCard = currentDeck.pop()!
-    currentDealerHand = [...currentDealerHand, newCard]
+    currentDealerHand.push(newCard)
   }
 
   // Handle card counter - preserve existing count unless deck was shuffled
@@ -573,49 +728,228 @@ function handleStand(state: GameState): GameState {
   }
 
   const finalDealerScore = calculateHandValue(currentDealerHand)
-  const finalPlayerScore = state.playerScore
   
-  // Determine winner and calculate winnings
-  let message = ''
-  let newCredits = state.credits
-  let winnings = 0
-  let gameResult: 'win' | 'lose' | 'tie' = 'lose'
-  
-  if (finalDealerScore > 21) {
-    message = 'Dealer busts! You win!'
-    winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
-    newCredits += winnings
-    gameResult = 'win'
-  } else if (finalPlayerScore > finalDealerScore) {
-    message = 'You win!'
-    winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
-    newCredits += winnings
-    gameResult = 'win'
-  } else if (finalDealerScore > finalPlayerScore) {
-    message = 'Dealer wins!'
-    // Player loses their bet (already deducted)
-    gameResult = 'lose'
-    winnings = -state.currentBet // Show the amount lost (negative)
+  // Handle split hands vs dealer
+  if (state.isSplit) {
+    return handleSplitHandResults(state, currentDealerHand, finalDealerScore, currentDeck, deckShuffled, newCardCounter)
   } else {
-    message = 'Push! It\'s a tie!'
-    // Return the bet
-    newCredits += state.currentBet
-    gameResult = 'tie'
+    // Regular single hand vs dealer
+    const finalPlayerScore = state.playerScore
+    
+    // Determine winner and calculate winnings
+    let message = ''
+    let newCredits = state.credits
+    let winnings = 0
+    let gameResult: 'win' | 'lose' | 'tie' = 'lose'
+    
+    if (finalDealerScore > 21) {
+      message = 'Dealer busts! You win!'
+      winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
+      newCredits += winnings
+      gameResult = 'win'
+    } else if (finalPlayerScore > finalDealerScore) {
+      message = 'You win!'
+      winnings = state.currentBet * 2 // 2x your bet (your bet + your winnings)
+      newCredits += winnings
+      gameResult = 'win'
+    } else if (finalDealerScore > finalPlayerScore) {
+      message = 'Dealer wins!'
+      // Player loses their bet (already deducted)
+      gameResult = 'lose'
+      winnings = -state.currentBet // Show the amount lost (negative)
+    } else {
+      message = 'Push! It\'s a tie!'
+      // Return the bet
+      newCredits += state.currentBet
+      gameResult = 'tie'
+    }
+    
+    // Check if player has enough credits to continue playing
+    const canContinuePlaying = newCredits > 0
+    
+    return {
+      ...state,
+      dealerHand: currentDealerHand,
+      deck: currentDeck,
+      gameStatus: canContinuePlaying ? 'betting' : 'finished',
+      dealerScore: finalDealerScore,
+      message: canContinuePlaying 
+        ? `${winnings > 0 ? `${message} You won $${winnings}!` : message} Place your next bet!`
+        : `${winnings > 0 ? `${message} You won $${winnings}!` : message} Game Over - No credits left!`,
+      cardsRemaining: currentDeck.length,
+      deckShuffled,
+      credits: newCredits,
+      currentBet: 0,
+      selectedChips: {},
+      canDoubleDown: false,
+      isDoubleDown: false,
+      gameResult,
+      winnings,
+      cardCounter: newCardCounter
+    }
+  }
+}
+
+function handleSplit(state: GameState): GameState {
+  if (state.gameStatus !== 'playing' || !state.canSplit || state.isSplit) return state
+  
+  // Check if player has enough credits for split
+  if (state.credits < state.currentBet) {
+    return {
+      ...state,
+      message: 'Not enough credits to split!'
+    }
+  }
+
+  // Create two split hands from the original pair
+  const card1 = state.playerHand[0]
+  const card2 = state.playerHand[1]
+  
+  // Create split hands
+  const splitHand1 = [card1]
+  const splitHand2 = [card2]
+  
+  // Deal one card to each split hand
+  let newDeck = [...state.deck]
+  let deckShuffled = state.deckShuffled
+  
+  // Check if we need to reshuffle
+  if (newDeck.length <= 30) {
+    newDeck = shuffleDeck(createDeck())
+    deckShuffled = true
   }
   
-  // Check if player has enough credits to continue playing
-  const canContinuePlaying = newCredits > 0
+  const newCard1 = newDeck.pop()!
+  const newCard2 = newDeck.pop()!
+  
+  splitHand1.push(newCard1)
+  splitHand2.push(newCard2)
+  
+  // Handle card counter
+  let newCardCounter: CardCounter
+  if (deckShuffled && !state.deckShuffled) {
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+  } else {
+    newCardCounter = new CardCounter(state.cardCounter.getState().totalDecks)
+    newCardCounter.setEnabled(state.cardCounter.isCounterEnabled())
+    const previousState = state.cardCounter.getState()
+    newCardCounter.restoreState(previousState)
+  }
+  
+  // Process the new cards
+  newCardCounter.processCard(newCard1.value)
+  newCardCounter.processCard(newCard2.value)
+  
+  // Calculate scores
+  const score1 = calculateHandValue(splitHand1)
+  const score2 = calculateHandValue(splitHand2)
+  
+  // Check for blackjack on either hand
+  const isBlackjack1 = isBlackjack(splitHand1)
+  const isBlackjack2 = isBlackjack(splitHand2)
+  
+  // Check if this is an Ace split
+  const isAceSplit = card1.value === 'A' && card2.value === 'A'
+  
+  // Update split count
+  const newSplitCount = state.splitCount + 1
+  
+  // For Ace splits, automatically move to next hand if current hand is complete
+  let nextHandIndex = 0
+  let nextHand = splitHand1
+  let nextHandScore = score1
+  let message = 'Split complete. Playing Hand 1.'
+  
+  if (isAceSplit) {
+    // Ace splits get only one card each, no more hits
+    if (isBlackjack1) {
+      message = 'Split Hand 1 Blackjack!'
+    } else {
+      message = 'Split Hand 1 complete (Ace split - one card only).'
+    }
+    
+    // If there's a second hand, move to it
+    if (splitHand2.length > 0) {
+      nextHandIndex = 1
+      nextHand = splitHand2
+      nextHandScore = score2
+      message += ' Playing Hand 2.'
+    }
+  } else if (isBlackjack1) {
+    message = 'Split Hand 1 Blackjack!'
+  }
   
   return {
     ...state,
-    dealerHand: currentDealerHand,
-    deck: currentDeck,
+    playerHand: nextHand, // Start with appropriate hand
+    splitHands: [splitHand1, splitHand2],
+    currentHandIndex: nextHandIndex,
+    splitBets: [state.currentBet, state.currentBet],
+    canSplit: !isAceSplit && canSplitHand(nextHand, state.credits - state.currentBet, state.currentBet, newSplitCount), // No resplitting on Ace splits
+    isSplit: true,
+    splitCount: newSplitCount,
+    playerScore: nextHandScore,
+    deck: newDeck,
+    cardsRemaining: newDeck.length,
+    deckShuffled,
+    credits: state.credits - state.currentBet, // Deduct the second bet
+    currentBet: state.currentBet, // Keep original bet for first hand
+    cardCounter: newCardCounter,
+    message
+  }
+}
+
+// Helper function to handle split hand results
+function handleSplitHandResults(
+  state: GameState, 
+  dealerHand: Card[], 
+  dealerScore: number, 
+  deck: Card[], 
+  deckShuffled: boolean,
+  cardCounter: CardCounter
+): GameState {
+  let totalWinnings = 0
+  let results: string[] = []
+  
+  // Evaluate each split hand against dealer
+  for (let i = 0; i < state.splitHands.length; i++) {
+    const hand = state.splitHands[i]
+    const handScore = calculateHandValue(hand)
+    const handBet = state.splitBets[i]
+    
+    if (handScore > 21) {
+      results.push(`Hand ${i + 1}: Bust (lose $${handBet})`)
+      totalWinnings -= handBet
+    } else if (dealerScore > 21) {
+      results.push(`Hand ${i + 1}: Win (dealer bust, win $${handBet})`)
+      totalWinnings += handBet
+    } else if (handScore > dealerScore) {
+      results.push(`Hand ${i + 1}: Win (win $${handBet})`)
+      totalWinnings += handBet
+    } else if (dealerScore > handScore) {
+      results.push(`Hand ${i + 1}: Lose (lose $${handBet})`)
+      totalWinnings -= handBet
+    } else {
+      results.push(`Hand ${i + 1}: Push (tie, bet returned)`)
+      // Push doesn't change total winnings
+    }
+  }
+  
+  const newCredits = state.credits + totalWinnings
+  const canContinuePlaying = newCredits > 0
+  const gameResult: 'win' | 'lose' | 'tie' = totalWinnings > 0 ? 'win' : totalWinnings < 0 ? 'lose' : 'tie'
+  
+  return {
+    ...state,
+    dealerHand,
+    deck,
     gameStatus: canContinuePlaying ? 'betting' : 'finished',
-    dealerScore: finalDealerScore,
+    dealerScore,
     message: canContinuePlaying 
-      ? `${winnings > 0 ? `${message} You won $${winnings}!` : message} Place your next bet!`
-      : `${winnings > 0 ? `${message} You won $${winnings}!` : message} Game Over - No credits left!`,
-    cardsRemaining: currentDeck.length,
+      ? `${results.join(', ')}. ${totalWinnings > 0 ? `Total winnings: $${totalWinnings}` : totalWinnings < 0 ? `Total loss: $${Math.abs(totalWinnings)}` : 'Push - no change'}. Place your next bet!`
+      : `${results.join(', ')}. ${totalWinnings > 0 ? `Total winnings: $${totalWinnings}` : totalWinnings < 0 ? `Total loss: $${Math.abs(totalWinnings)}` : 'Push - no change'}. Game Over - No credits left!`,
+    cardsRemaining: deck.length,
     deckShuffled,
     credits: newCredits,
     currentBet: 0,
@@ -623,8 +957,13 @@ function handleStand(state: GameState): GameState {
     canDoubleDown: false,
     isDoubleDown: false,
     gameResult,
-    winnings,
-    cardCounter: newCardCounter
+    winnings: totalWinnings,
+    cardCounter,
+    // Reset split state
+    splitHands: [],
+    currentHandIndex: 0,
+    splitBets: [],
+    isSplit: false
   }
 }
 
@@ -665,29 +1004,27 @@ function shuffleDeck(deck: Card[]): Card[] {
   return shuffled
 }
 
-function calculateHandValue(hand: Card[]): number {
+export function calculateHandValue(hand: Card[]): number {
   let total = 0
   let aces = 0
   
-  // First pass: add up all cards, count aces (excluding hidden cards)
+  // First pass: add up all non-ace cards
   for (const card of hand) {
-    if (card.isHidden) continue // Skip hidden cards
-    
     if (card.value === 'A') {
       aces++
-      total += 11
     } else {
       total += card.numericValue
     }
   }
   
-  // Second pass: adjust aces if needed
-  while (total > 21 && aces > 0) {
-    total -= 10
-    aces--
+  // Second pass: add aces, treating them as 11 if possible, otherwise 1
+  for (let i = 0; i < aces; i++) {
+    if (total + 11 <= 21) {
+      total += 11
+    } else {
+      total += 1
+    }
   }
-  
-
   
   return total
 }

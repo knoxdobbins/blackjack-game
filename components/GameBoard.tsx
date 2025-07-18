@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Button } from '@/components/ui/button'
-import { GameState } from '@/lib/gameLogic'
+import { GameState, calculateHandValue } from '@/lib/gameLogic'
 import { PlayingCard } from './PlayingCard'
 import { HandDisplay } from './HandDisplay'
 import { Chip } from './Chip'
@@ -11,6 +11,7 @@ import { GameResult } from './GameResult'
 import { useEffect, useState } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { CardCounter } from '@/lib/cardCounter'
+import { Card } from '@/lib/gameLogic'
 
 interface GameBoardProps {
   gameState: GameState
@@ -24,6 +25,7 @@ interface GameBoardProps {
   onUndoLastBet: () => void
   onClearBet: () => void
   onToggleCardCounting: () => void
+  onSplit: () => void
 }
 
 // Helper function to calculate count change for a card
@@ -60,8 +62,8 @@ function getBettingRecommendation(trueCount: number): string {
   }
 }
 
-// Card counting strategy function
-function getCardCountingStrategySuggestion(playerScore: number, dealerUpCard: number, canDoubleDown: boolean, gameStatus: string, trueCount: number): string {
+// Enhanced card counting strategy function with split support
+function getCardCountingStrategySuggestion(playerScore: number, dealerUpCard: number, canDoubleDown: boolean, gameStatus: string, trueCount: number, isSplit: boolean, splitHands: Card[][], currentHandIndex: number): string {
   // Only show suggestions during active play
   if (gameStatus !== 'playing') {
     return ''
@@ -80,6 +82,139 @@ function getCardCountingStrategySuggestion(playerScore: number, dealerUpCard: nu
   // Get dealer's up card value (first card)
   const dealerCard = dealerUpCard
 
+  // Special handling for split hands
+  if (isSplit && splitHands.length > 0) {
+    const currentHand = splitHands[currentHandIndex]
+    const isAceSplit = currentHand.length === 2 && currentHand[0].value === 'A' && currentHand[1].value === 'A'
+    
+    if (isAceSplit) {
+      return 'Ace Split - One card only'
+    }
+    
+    // Enhanced split strategies with card counting
+    if (playerScore === 8) {
+      // With very high count (+6 or higher), double down on split 8s vs dealer 6
+      if (trueCount >= 6 && dealerCard === 6 && canDoubleDown) {
+        return 'Double Down (High Count)'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 9) {
+      // With high count (+3 or higher), double down against dealer 2
+      if (trueCount >= 3 && dealerCard === 2 && canDoubleDown) {
+        return 'Double Down (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard >= 3 && dealerCard <= 6 && canDoubleDown) {
+        return 'Double Down'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 10) {
+      // With high count (+4 or higher), double down against dealer A
+      if (trueCount >= 4 && dealerCard === 11 && canDoubleDown) {
+        return 'Double Down (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard <= 9 && canDoubleDown) {
+        return 'Double Down'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 11) {
+      if (canDoubleDown) {
+        return 'Double Down'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 12) {
+      // With high count (+3 or higher), stand against dealer 3
+      if (trueCount >= 3 && dealerCard === 3) {
+        return 'Stand (High Count)'
+      }
+      // With high count (+2 or higher), stand against dealer 2
+      if (trueCount >= 2 && dealerCard === 2) {
+        return 'Stand (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard >= 4 && dealerCard <= 6) {
+        return 'Stand'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 13) {
+      // With high count (+1 or higher), stand against dealer 2
+      if (trueCount >= 1 && dealerCard === 2) {
+        return 'Stand (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard <= 6) {
+        return 'Stand'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 14) {
+      // With high count (+3 or higher), stand against dealer 10
+      if (trueCount >= 3 && dealerCard === 10) {
+        return 'Stand (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard <= 6) {
+        return 'Stand'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 15) {
+      // With high count (+4 or higher), stand against dealer 10
+      if (trueCount >= 4 && dealerCard === 10) {
+        return 'Stand (High Count)'
+      }
+      // With high count (+3 or higher), stand against dealer 9
+      if (trueCount >= 3 && dealerCard === 9) {
+        return 'Stand (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard <= 6) {
+        return 'Stand'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore === 16) {
+      // With high count (+6 or higher), stand against dealer 10
+      if (trueCount >= 6 && dealerCard === 10) {
+        return 'Stand (High Count)'
+      }
+      // With high count (+5 or higher), stand against dealer 9
+      if (trueCount >= 5 && dealerCard === 9) {
+        return 'Stand (High Count)'
+      }
+      // With high count (+4 or higher), stand against dealer A
+      if (trueCount >= 4 && dealerCard === 11) {
+        return 'Stand (High Count)'
+      }
+      // Standard basic strategy
+      if (dealerCard <= 6) {
+        return 'Stand'
+      }
+      return 'Hit'
+    }
+    
+    if (playerScore >= 17) {
+      return 'Stand'
+    }
+
+    return 'Hit'
+  }
+
+  // Regular hand strategies (existing logic)
   // Hard totals (no ace counted as 11)
   if (playerScore <= 8) {
     return 'Hit'
@@ -199,8 +334,8 @@ function getCardCountingStrategySuggestion(playerScore: number, dealerUpCard: nu
   return 'Hit'
 }
 
-export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip, onUndoLastBet, onClearBet, onToggleCardCounting }: GameBoardProps) {
-  const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown, gameResult, winnings, cardCounter } = gameState;
+export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, onStartGame, onDoubleDown, onRemoveBetChip, onUndoLastBet, onClearBet, onToggleCardCounting, onSplit }: GameBoardProps) {
+  const { playerHand, dealerHand, playerScore, dealerScore, gameStatus, message, cardsRemaining, deckShuffled, credits, currentBet, canDoubleDown, gameResult, winnings, cardCounter, canSplit, isSplit, splitHands, currentHandIndex, splitBets, splitCount } = gameState;
   
   const [showResult, setShowResult] = useState(false)
 
@@ -229,7 +364,7 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
   const trueCount = cardCounter.getTrueCount()
   
   // Strategy suggestion updates in real-time during play
-  const strategySuggestion = getCardCountingStrategySuggestion(playerScore, dealerUpCard, canDoubleDown, gameStatus, trueCount)
+  const strategySuggestion = getCardCountingStrategySuggestion(playerScore, dealerUpCard, canDoubleDown, gameStatus, trueCount, isSplit, splitHands, currentHandIndex)
   
   // Betting recommendation only updates between rounds (during betting phase)
   const bettingRecommendation = gameStatus === 'betting' ? getBettingRecommendation(trueCount) : ''
@@ -248,6 +383,9 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
         isVisible={showResult} 
       />
       
+      {/* Split Hands Display */}
+      {/* Removed separate split panel - will integrate into main player area */}
+
       {/* Green Felt Table with Golden Border */}
       <div className="relative bg-green-700 rounded-3xl border-8 border-yellow-400 shadow-2xl overflow-hidden">
         <div className="p-8 min-h-[600px] flex flex-col">
@@ -300,8 +438,13 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
           {/* Game Information - Middle */}
           <div className="flex-1 flex flex-col items-center justify-center space-y-4">
             {/* Total/Pot Display */}
-            <div className="bg-green-800 rounded-lg px-6 py-3">
-              <div className="text-white text-2xl font-bold">${currentBet.toFixed(2)}</div>
+            <div className={`bg-green-800 rounded-lg px-6 py-3 ${isSplit ? 'mt-10' : ''}`}>
+              <div className="text-white text-2xl font-bold">
+                ${isSplit && splitBets.length > 0 
+                  ? splitBets.reduce((sum, bet) => sum + bet, 0).toFixed(2)
+                  : currentBet.toFixed(2)
+                }
+              </div>
               <div className="text-white text-sm text-center">Total</div>
             </div>
             
@@ -316,32 +459,91 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
           </div>
 
           {/* Player Section - Bottom */}
-          <div className="flex-1 flex flex-col items-center justify-end space-y-4">
-            {/* Player Cards */}
-            <div className="flex space-x-2">
-              {playerHand.map((card, index) => (
-                <PlayingCard 
-                  key={index} 
-                  card={card} 
-                  countChange={getCardCountChange(card.value)}
-                  showCountChange={cardCounter.isCounterEnabled()}
-                />
-              ))}
-            </div>
-            
-            {/* Player Label and Score */}
-            <div className="flex items-center space-x-4">
-              <div className="bg-gray-800 rounded-lg px-4 py-2">
-                <span className="text-white font-semibold text-lg">Player</span>
-              </div>
-              {/* Player Score */}
-              {playerHand.length > 0 && (
-                <div className="bg-green-800 rounded-lg px-3 py-2">
-                  <span className="text-white font-bold text-lg">{playerScore}</span>
-                </div>
-              )}
+          {/* Player's Hand */}
+        <div className="text-center space-y-2 sm:space-y-4">
+          
+          {!isSplit && (
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-white text-base sm:text-lg font-semibold">Player</span>
+            <div className="bg-green-600 text-white px-2 py-1 rounded text-sm sm:text-base font-bold">
+              {playerScore}
             </div>
           </div>
+          )}
+          
+          {isSplit && splitHands.length > 0 ? (
+            // Split hands display - horizontal row
+            <div className="space-y-2">
+              <div className="text-sm text-gray-300 mb-2 mt-10">
+                Split #{splitCount} of 3 - Hand {currentHandIndex + 1} of {splitHands.length}
+              </div>
+              <div className="flex flex-wrap justify-center gap-4">
+                {splitHands.map((hand, index) => {
+                  const handScore = calculateHandValue(hand)
+                  const isActive = index === currentHandIndex
+                  const isComplete = index < currentHandIndex
+                  const handBet = splitBets[index] || currentBet
+                  
+                  return (
+                    <div 
+                      key={index}
+                      className={`p-3 rounded-lg border-2 ${
+                        isActive 
+                          ? 'border-yellow-400 bg-yellow-900/20' 
+                          : isComplete 
+                            ? 'border-green-400 bg-green-900/20'
+                            : 'border-gray-600 bg-gray-700/20'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-4">
+                        <span className={`text-xs font-semibold ${
+                          isActive ? 'text-yellow-300' : isComplete ? 'text-green-300' : 'text-gray-300'
+                        }`}>
+                          Hand {index + 1}
+                          {isActive && ' (Active)'}
+                          {isComplete && ' (Complete)'}
+                        </span>
+                        <span className="text-white text-xs">${handBet}</span>
+                      </div>
+                      
+                      {/* Cards */}
+                      <div className="flex space-x-1 mb-3 mt-10">
+                        {hand.map((card, cardIndex) => (
+                          <PlayingCard 
+                            key={cardIndex} 
+                            card={card} 
+                            countChange={getCardCountChange(card.value)}
+                            showCountChange={cardCounter.isCounterEnabled()}
+                          />
+                        ))}
+                      </div>
+                      
+                      {/* Score */}
+                      <div className="text-center">
+                        <span className={`text-sm font-bold ${
+                          handScore > 21 ? 'text-red-400' : handScore === 21 ? 'text-green-400' : 'text-white'
+                        }`}>
+                          {handScore}
+                          {handScore > 21 && ' (Bust)'}
+                          {handScore === 21 && ' (21)'}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            // Regular single hand display
+            <div className="flex justify-center">
+              <HandDisplay 
+                hand={playerHand} 
+                score={playerScore}
+                isDealer={false}
+              />
+            </div>
+          )}
+        </div>
         </div>
       </div>
 
@@ -368,6 +570,16 @@ export function GameBoard({ gameState, onHit, onStand, onNewGame, onPlaceBet, on
                 className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-8 text-lg rounded-lg"
               >
                 Double Down
+              </Button>
+            )}
+            {/* Split Button */}
+            {canSplit && (
+              <Button
+                onClick={onSplit}
+                disabled={false} // Enable the split button
+                className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-8 text-lg rounded-lg"
+              >
+                Split
               </Button>
             )}
           </>
